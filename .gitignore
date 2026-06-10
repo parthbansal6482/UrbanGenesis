@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual Environment
+.venv/
+
+# Environment Variables
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Mac
+.DS_Store
+
+# Data
+data/raw/
+data/processed/
+data/tiles/
+data/masks/
+
+# Models
+models/
+
+# HuggingFace cache
+.cache/
+
+# VS Code
+.vscode/
