@@ -1,0 +1,81 @@
+paths:
+  raw_data: data/raw             # gitignored — cleared after streaming
+  tiles: data/tiles              # gitignored — cleared after inference
+  masks: data/masks              # gitignored — kept until demo precomputed
+  vegetation: data/vegetation    # gitignored
+  checkpoints: model/checkpoints # gitignored
+  precomputed: demo/precomputed  # tracked — only PNGs and JSON
+
+tiling:
+  tile_size: 512
+  overlap: 0.20
+  min_valid_pixels: 0.70
+
+model:
+  backbone: nvidia/mit-b2
+  num_classes: 7                 # 0–6 including cropland
+  batch_size: 8
+  learning_rate: 0.00006
+  weight_decay: 0.01
+  epochs: 50
+  early_stopping_patience: 7
+  mixed_precision: true
+  label_smoothing: 0.1
+
+classes:
+  0: background
+  1: buildings
+  2: roads
+  3: cropland                    # NEW — key addition for ABI
+  4: dense_vegetation
+  5: water
+  6: bare_soil
+
+class_colors:                    # RGB for visualisation
+  0: [0, 0, 0]                   # background — black
+  1: [220, 38, 38]               # buildings — red
+  2: [130, 90, 44]               # roads — brown
+  3: [212, 160, 23]              # cropland — gold
+  4: [34, 139, 34]               # dense vegetation — green
+  5: [30, 100, 200]              # water — blue
+  6: [210, 180, 140]             # bare soil — tan
+
+analytics:
+  ndvi_vegetation_threshold: 0.3
+  abi_warning_threshold: 0.5
+  abi_critical_threshold: 0.3
+  encroachment_drop_pct: 0.20
+  window_years: 5
+  resolution_m: 10               # Sentinel-2 resolution in metres
+
+sentinel:
+  bands: [B04, B03, B02, B08]   # Red, Green, Blue, NIR
+  resolution: 10                  # metres per pixel
+  cloud_cover_max: 15            # slightly relaxed for agricultural zones
+
+# Farmland-adjacent zones — chosen because active cropland borders
+# rapidly expanding Indian cities (verified from Sentinel-2 visual inspection)
+zones:
+  nashik_north:
+    name: "Nashik North Agricultural Zone"
+    bbox: [73.72, 20.05, 73.98, 20.25]    # Nashik, Maharashtra — grape farms
+    years: [2018, 2020, 2022, 2024]
+    satyukt_relevance: "Grape and onion belt. Sat4Risk flood zone. MRV baseline."
+
+  vijayawada_west:
+    name: "Vijayawada West Farmland"
+    bbox: [80.45, 16.45, 80.70, 16.65]    # Krishna delta — rice/cotton
+    years: [2018, 2020, 2022, 2024]
+    satyukt_relevance: "Krishna delta cropland. Insurance client region."
+
+  hubli_outskirts:
+    name: "Hubli Peripheral Agricultural Zone"
+    bbox: [74.95, 15.28, 75.20, 15.48]    # North Karnataka — cotton/sunflower
+    years: [2018, 2020, 2022, 2024]
+    satyukt_relevance: "Karnataka agri zone. Satyukt active partner region."
+
+stac:
+  endpoint: "https://planetarycomputer.microsoft.com/api/stac/v1"
+  collection: "sentinel-2-l2a"
+  # No credentials needed — Planetary Computer is free and anonymous
+  # Token is auto-signed via planetary_computer.sign_inplace()
