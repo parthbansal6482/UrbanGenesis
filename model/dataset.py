@@ -4,7 +4,7 @@ model/dataset.py
 PyTorch Dataset for SegFormer training on satellite tiles.
 Expects tile GeoTIFFs (4-channel) and corresponding label PNGs.
 Label classes: 0=background, 1=buildings, 2=roads,
-               3=dense_vegetation, 4=water, 5=bare_soil
+               3=cropland, 4=dense_vegetation, 5=water, 6=bare_soil
 """
 
 import numpy as np
