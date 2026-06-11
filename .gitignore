@@ -1,30 +1,83 @@
-# Python
-__pycache__/
-*.pyc
-
-# Virtual Environment
-.venv/
-
-# Environment Variables
-.env
-
-# Jupyter
-.ipynb_checkpoints/
-
-# Mac
-.DS_Store
-
-# Data
+# ── Data — never commit raw or processed satellite data ──────────────────────
 data/raw/
-data/processed/
 data/tiles/
 data/masks/
+data/ndvi/
+data/vegetation/
+data/labels/
+*.tif
+*.tiff
+*.jp2
+*.img
+*.hdf
+*.nc
 
-# Models
-models/
+# ── Archives — never commit large bundles ─────────────────────────────────────
+*.zip
+*.tar.gz
+*.gz
+colab_package.zip
 
-# HuggingFace cache
-.cache/
+# ── Model weights — large binary files, never in repo ────────────────────────
+model/checkpoints/
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.onnx
+*.pkl
+*.joblib
 
-# VS Code
+# ── Demo precomputed — only the final PNGs/JSONs go in, not intermediates ────
+demo/precomputed/raw/
+demo/precomputed/*.tif
+demo/precomputed/*.npy
+
+# ── Python standard ignores ───────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+*.pyc
+*.pyo
+*.pyd
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+.env
+.env.local
+*.env
+.venv/
+venv/
+ENV/
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+secrets.yaml
+credentials.json
+
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── NumPy arrays ─────────────────────────────────────────────────────────────
+*.npy
+*.npz
+
+# ── OS files ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
 .vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Misc cache ────────────────────────────────────────────────────────────────
+.cache/
