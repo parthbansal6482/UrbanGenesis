@@ -61,8 +61,8 @@ class SentinelDownloader:
         kwargs["headers"]["Authorization"] = f"Bearer {self.token}"
 
         resp = requests.request(method, url, **kwargs)
-        if resp.status_code == 401:
-            logger.info("CDSE Token expired. Re-fetching...")
+        if resp.status_code in (401, 403):
+            logger.info(f"CDSE Token rejected ({resp.status_code}). Re-fetching...")
             self.token = self._get_token()
             kwargs["headers"]["Authorization"] = f"Bearer {self.token}"
             resp = requests.request(method, url, **kwargs)
@@ -181,8 +181,17 @@ class SentinelDownloader:
         zip_path = out_dir / f"{product_id}.zip"
 
         if zip_path.exists():
-            logger.info(f"Already downloaded: {product_id}")
-            return zip_path
+            try:
+                with zipfile.ZipFile(zip_path, "r") as z:
+                    if z.testzip() is None:
+                        logger.info(f"Already downloaded and verified: {product_id}")
+                        return zip_path
+            except Exception:
+                logger.warning(f"Corrupted zip file found at {zip_path}. Deleting and re-downloading...")
+                try:
+                    zip_path.unlink()
+                except Exception:
+                    pass
 
         url = f"{CDSE_DOWNLOAD_URL}({product_id})/$value"
 
