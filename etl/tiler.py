@@ -4,6 +4,9 @@ etl/tiler.py
 Splits a large GeoTIFF scene into overlapping 512x512 tiles.
 Each tile is saved with its geographic metadata preserved so results
 can be stitched back into a full-scene map after inference.
+
+tile_size and overlap are sourced from config["tiling"]["tile_size"] and
+config["tiling"]["overlap"] — see config/settings.yaml.
 """
 
 import numpy as np

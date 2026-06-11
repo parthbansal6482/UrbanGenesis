@@ -13,7 +13,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-TARGET_CRS = "EPSG:32643"   # UTM Zone 43N — correct for Bengaluru / Hyderabad
+TARGET_CRS = "EPSG:32643"   # UTM Zone 43N — covers peninsular India (Nashik, Vijayawada, Hubli, Bengaluru)
 TARGET_RESOLUTION = 10.0    # metres, matching Sentinel-2 10m bands
 
 def align_to_reference(

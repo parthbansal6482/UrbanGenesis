@@ -20,12 +20,13 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 CLASS_COLORS = {
-    0: (0, 0, 0),        # background — black
-    1: (220, 38, 38),    # buildings — red
-    2: (180, 120, 60),   # roads — brown
-    3: (34, 139, 34),    # dense vegetation — green
-    4: (30, 100, 200),   # water — blue
-    5: (210, 180, 140),  # bare soil — tan
+    0: (0, 0, 0),         # background — black
+    1: (220, 38, 38),     # buildings — red
+    2: (130, 90, 44),     # roads — brown
+    3: (212, 160, 23),    # cropland — gold
+    4: (34, 139, 34),     # dense vegetation — green
+    5: (30, 100, 200),    # water — blue
+    6: (210, 180, 140),   # bare soil — tan
 }
 
 

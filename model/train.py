@@ -54,7 +54,7 @@ def train(config_path: str = "config/settings.yaml"):
         # Fall back to CPU on macOS to avoid known PyTorch MPS attention head backward-pass non-contiguous view bugs
         device = torch.device("cpu")
 
-    num_classes = mcfg.get("num_classes", 6)
+    num_classes = mcfg.get("num_classes", 7)
 
     # Load model — SegFormer balances accuracy and speed
     id2label = {int(k): v for k, v in cfg["classes"].items()}
@@ -93,8 +93,10 @@ def train(config_path: str = "config/settings.yaml"):
 
     model = model.to(device)
 
-    # Collect tiles and labels specifically for bengaluru
-    tile_dir = Path(cfg["paths"]["tiles"]) / "bengaluru"
+    # Collect tiles and labels for the first configured zone
+    zone_keys = list(cfg.get("zones", {}).keys())
+    zone_name = zone_keys[0] if zone_keys else "nashik_north"
+    tile_dir = Path(cfg["paths"]["tiles"]) / zone_name
     tiles = sorted(tile_dir.glob("**/*.tif"))
     
     # Locate corresponding label PNGs: replaces /tiles/ with /labels/ and changes extension
@@ -138,10 +140,9 @@ def train(config_path: str = "config/settings.yaml"):
     use_amp = mcfg["mixed_precision"] and device.type == "cuda"
     scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
-    # Class weights to handle class imbalance and focus the model on road detection (class 2)
-    # Weights: [background: 5.0, buildings: 2.0, roads: 6.0, dense_veg: 0.5, water: 12.0, bare_soil: 2.0]
-    class_weights = torch.tensor([5.0, 2.0, 6.0, 0.5, 12.0, 2.0], dtype=torch.float32, device=device)
-    loss_fn = nn.CrossEntropyLoss(weight=class_weights)
+    # CrossEntropyLoss with label smoothing from config
+    label_smoothing = mcfg.get("label_smoothing", 0.0)
+    loss_fn = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
 
     best_miou = 0.0
     patience_counter = 0
