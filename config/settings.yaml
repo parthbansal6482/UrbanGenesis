@@ -74,8 +74,15 @@ zones:
     years: [2018, 2020, 2022, 2024]
     satyukt_relevance: "Karnataka agri zone. Satyukt active partner region."
 
+  bengaluru:
+    name: "Bengaluru Agricultural Buffer Zone"
+    bbox: [77.45, 12.83, 77.75, 13.10]
+    years: [2017, 2019, 2021, 2023]
+    satyukt_relevance: "Satyukt headquarters regional cropland buffer tracker."
+
 stac:
   endpoint: "https://planetarycomputer.microsoft.com/api/stac/v1"
   collection: "sentinel-2-l2a"
   # No credentials needed — Planetary Computer is free and anonymous
   # Token is auto-signed via planetary_computer.sign_inplace()
+
