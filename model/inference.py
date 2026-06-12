@@ -149,6 +149,13 @@ def run_inference_on_tiles(
             )
             preds = logits.argmax(dim=1).cpu().numpy().astype(np.uint8)
 
+            # If the model has 6 classes (legacy checkpoint), map to 7-class FarmGuard indices:
+            # 6-class: [0: bg, 1: buildings, 2: roads, 3: dense_veg, 4: water, 5: bare_soil]
+            # 7-class: [0: bg, 1: buildings, 2: roads, 3: cropland, 4: dense_veg, 5: water, 6: bare_soil]
+            if logits.shape[1] == 6:
+                class_mapping = np.array([0, 1, 2, 4, 5, 6], dtype=np.uint8)
+                preds = class_mapping[preds]
+
         for pred, meta in zip(preds, batch_meta):
             mask_path = output_dir / Path(meta["path"]).name.replace(".tif", "_mask.png")
             Image.fromarray(pred).save(mask_path)
