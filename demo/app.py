@@ -50,7 +50,7 @@ try:
     for zone, vals in _cfg.get("zones", {}).items():
         ZONE_BBOXES[zone] = vals["bbox"]  # [lon_min, lat_min, lon_max, lat_max]
         ZONE_DISPLAY_NAMES[zone] = vals.get("name", zone.replace("_", " ").capitalize())
-        ZONE_YEARS[zone] = vals.get("years", [2018, 2020, 2022, 2024])
+        ZONE_YEARS[zone] = vals.get("years", [2017, 2019, 2021, 2023])
 except Exception:
     ZONE_BBOXES = {
         "nashik_north": [73.72, 20.05, 73.98, 20.25],
@@ -63,9 +63,9 @@ except Exception:
         "hubli_outskirts": "Hubli Peripheral Agricultural Zone",
     }
     ZONE_YEARS = {
-        "nashik_north": [2018, 2020, 2022, 2024],
-        "vijayawada_west": [2018, 2020, 2022, 2024],
-        "hubli_outskirts": [2018, 2020, 2022, 2024],
+        "nashik_north": [2017, 2019, 2021, 2023],
+        "vijayawada_west": [2017, 2019, 2021, 2023],
+        "hubli_outskirts": [2017, 2019, 2021, 2023],
     }
 
 # Canonical class names and colors

@@ -37,11 +37,11 @@ import matplotlib.cm as cm
 import logging
 
 # Set GDAL HTTP timeouts BEFORE rasterio is imported (env vars read at init time)
-# This prevents COG windowed reads from hanging indefinitely on slow CDN responses
-os.environ.setdefault("GDAL_HTTP_TIMEOUT", "30")          # 30s per HTTP request
-os.environ.setdefault("GDAL_HTTP_CONNECTTIMEOUT", "15")   # 15s to establish connection
-os.environ.setdefault("GDAL_HTTP_MAX_RETRY", "3")         # retry up to 3 times
-os.environ.setdefault("GDAL_HTTP_RETRY_DELAY", "2")       # 2s between retries
+# This prevents COG windowed reads from failing prematurely on slow CDN responses
+os.environ.setdefault("GDAL_HTTP_TIMEOUT", "300")          # 300s per HTTP request
+os.environ.setdefault("GDAL_HTTP_CONNECTTIMEOUT", "60")   # 60s to establish connection
+os.environ.setdefault("GDAL_HTTP_MAX_RETRY", "5")         # retry up to 5 times
+os.environ.setdefault("GDAL_HTTP_RETRY_DELAY", "3")       # 3s between retries
 os.environ.setdefault("GDAL_DISABLE_READDIR_ON_OPEN", "EMPTY_DIR")  # faster COG reads
 
 # Ensure project root in path
@@ -92,10 +92,10 @@ def mask_to_rgb(mask):
     return rgb
 
 
-def fetch_esri_landcover_tile(bbox, year, output_size=1024):
+def fetch_esri_landcover_tile(bbox, year, output_shape=1024):
     """
     Fetch ESRI Annual Land Cover for a given bbox and year from Planetary Computer.
-    Returns (farmguard_mask, raw_esri_mask) as numpy arrays of shape (output_size, output_size).
+    Returns (farmguard_mask, raw_esri_mask) as numpy arrays.
     bbox: [lon_min, lat_min, lon_max, lat_max] in WGS84 (EPSG:4326)
     """
     try:
@@ -107,6 +107,12 @@ def fetch_esri_landcover_tile(bbox, year, output_size=1024):
         from rasterio.enums import Resampling
     except ImportError:
         raise ImportError("Required: pip install pystac-client planetary-computer rasterio")
+
+    # Determine target dimensions:
+    if isinstance(output_shape, int):
+        out_h, out_w = output_shape, output_shape
+    else:
+        out_h, out_w = output_shape
 
     # ESRI Land Cover is available 2017-2023; clamp to nearest available year
     esri_year = min(max(year, 2017), 2023)
@@ -153,7 +159,7 @@ def fetch_esri_landcover_tile(bbox, year, output_size=1024):
                 data = src.read(
                     1,
                     window=window,
-                    out_shape=(output_size, output_size),
+                    out_shape=(out_h, out_w),
                     resampling=Resampling.nearest,
                     boundless=True,     # allow reads that extend beyond raster extent
                     fill_value=0,
@@ -167,7 +173,7 @@ def fetch_esri_landcover_tile(bbox, year, output_size=1024):
         return None, None
 
     # Mosaic: for each pixel, use the first non-zero value across tiles
-    esri_mask = np.zeros((output_size, output_size), dtype=np.uint8)
+    esri_mask = np.zeros((out_h, out_w), dtype=np.uint8)
     for tile in all_tiles:
         valid = (tile > 0) & (esri_mask == 0)
         esri_mask[valid] = tile[valid]
@@ -180,7 +186,7 @@ def fetch_esri_landcover_tile(bbox, year, output_size=1024):
     return farmguard_mask, esri_mask
 
 
-def _fetch_single_s2_band(signed_href, lon_min, lat_min, lon_max, lat_max, fetch_size):
+def _fetch_single_s2_band(signed_href, lon_min, lat_min, lon_max, lat_max, output_shape):
     """Worker function to fetch a single band of Sentinel-2 from Planetary Computer COG."""
     import rasterio
     from rasterio.windows import from_bounds
@@ -198,17 +204,25 @@ def _fetch_single_s2_band(signed_href, lon_min, lat_min, lon_max, lat_max, fetch
             left, bottom, right, top = lon_min, lat_min, lon_max, lat_max
 
         window = from_bounds(left, bottom, right, top, src.transform)
+        if output_shape is None:
+            out_h = int(round(window.height))
+            out_w = int(round(window.width))
+        elif isinstance(output_shape, int):
+            out_h, out_w = output_shape, output_shape
+        else:
+            out_h, out_w = output_shape
+
         return src.read(
             1,
             window=window,
-            out_shape=(fetch_size, fetch_size),
+            out_shape=(out_h, out_w),
             resampling=Resampling.bilinear,
             boundless=True,
             fill_value=0,
         ).astype(np.float32)
 
 
-def fetch_sentinel2_true_color(bbox, year, output_size=1024):
+def fetch_sentinel2_true_color(bbox, year, output_size=None):
     """
     Fetch best available Sentinel-2 true color image (least cloudy) for a bbox/year.
     Returns (RGB array, (red,green,blue,nir) bands) or (None, None) on failure.
@@ -217,7 +231,11 @@ def fetch_sentinel2_true_color(bbox, year, output_size=1024):
     try:
         import pystac_client
         import planetary_computer
+        import rasterio
+        from rasterio.windows import from_bounds
+        from rasterio.warp import transform_bounds
         import concurrent.futures
+        from collections import defaultdict
     except ImportError:
         raise ImportError("Required: pip install pystac-client planetary-computer rasterio")
 
@@ -226,88 +244,181 @@ def fetch_sentinel2_true_color(bbox, year, output_size=1024):
         modifier=planetary_computer.sign_inplace,
     )
 
-    # Search for least-cloudy scene in Indian agricultural growing season (Oct-Feb)
-    search = client.search(
-        collections=["sentinel-2-l2a"],
-        bbox=bbox,
-        datetime=f"{year}-10-01/{year+1}-02-28",
-        query={"eo:cloud_cover": {"lt": 15}},
-        sortby=[{"field": "eo:cloud_cover", "direction": "asc"}],
-        max_items=5,
-    )
-    items = list(search.items())
+    lon_min, lat_min, lon_max, lat_max = bbox
 
-    # Fall back to full year if no results in growing season
-    if not items:
+    # Multi-stage datetime window search to guarantee full coverage:
+    # 1. February strictly (mature Rabi season)
+    # 2. Jan 15 to Mar 15 (highly similar phenology)
+    # 3. Full year fallback
+    search_stages = [
+        (f"{year}-02-01/{year}-02-28", 15, 30, "February strictly"),
+        (f"{year}-01-15/{year}-03-15", 20, 60, "Jan 15 - Mar 15"),
+        (f"{year}-01-01/{year}-12-31", 20, 100, "Full year fallback"),
+    ]
+
+    best_date = None
+    best_coverage_pct = 0.0
+    best_cloud_cover = 100.0
+    best_date_items = []
+
+    for date_range, max_cloud, max_items, label in search_stages:
+        logger.info(f"Evaluating candidate dates in {label} ({date_range})...")
         search = client.search(
             collections=["sentinel-2-l2a"],
             bbox=bbox,
-            datetime=f"{year}-01-01/{year}-12-31",
-            query={"eo:cloud_cover": {"lt": 20}},
+            datetime=date_range,
+            query={"eo:cloud_cover": {"lt": max_cloud}},
             sortby=[{"field": "eo:cloud_cover", "direction": "asc"}],
-            max_items=5,
+            max_items=max_items,
         )
         items = list(search.items())
+        if not items:
+            continue
 
-    if not items:
-        logger.warning(f"No cloud-free Sentinel-2 found for {bbox}, {year}")
+        # Group by date
+        date_groups = defaultdict(list)
+        for item in items:
+            date_str = item.datetime.strftime("%Y-%m-%d")
+            tile_id = item.properties.get("s2:mgrs_tile", "")
+            # Deduplicate items by tile ID to avoid redundant downloads on same date
+            if not any(x.properties.get("s2:mgrs_tile") == tile_id for x in date_groups[date_str]):
+                date_groups[date_str].append(item)
+
+        # Score date groups in this stage
+        stage_best_date = None
+        stage_best_coverage = 0.0
+        stage_best_cloud = 100.0
+        stage_best_items = []
+
+        for date_str, group_items in sorted(date_groups.items()):
+            combined_mask = np.zeros((64, 64), dtype=bool)
+            total_cloud = 0.0
+            
+            for item in group_items:
+                try:
+                    href = item.assets["B04"].href
+                    signed_href = planetary_computer.sign(href)
+                    with rasterio.open(signed_href) as src:
+                        src_crs = src.crs
+                        if src_crs and str(src_crs).upper() not in ("EPSG:4326", "CRS84"):
+                            left, bottom, right, top = transform_bounds(
+                                "EPSG:4326", src_crs,
+                                lon_min, lat_min, lon_max, lat_max
+                            )
+                        else:
+                            left, bottom, right, top = lon_min, lat_min, lon_max, lat_max
+                        window = from_bounds(left, bottom, right, top, src.transform)
+                        test_data = src.read(1, window=window, out_shape=(64, 64), boundless=True, fill_value=0)
+                        combined_mask |= (test_data > 0)
+                        total_cloud += item.properties.get("eo:cloud_cover", 0.0)
+                except Exception as e:
+                    logger.warning(f"  Failed to inspect candidate {item.id} on {date_str}: {e}")
+                    continue
+            
+            coverage_pct = np.mean(combined_mask) * 100
+            avg_cloud = total_cloud / len(group_items) if group_items else 100.0
+            logger.info(f"  Date {date_str}: coverage={coverage_pct:.2f}%, avg_cloud={avg_cloud:.2f}% ({len(group_items)} tiles)")
+
+            if coverage_pct > stage_best_coverage + 1.0:
+                stage_best_coverage = coverage_pct
+                stage_best_cloud = avg_cloud
+                stage_best_date = date_str
+                stage_best_items = group_items
+            elif abs(coverage_pct - stage_best_coverage) <= 1.0 and avg_cloud < stage_best_cloud:
+                stage_best_coverage = coverage_pct
+                stage_best_cloud = avg_cloud
+                stage_best_date = date_str
+                stage_best_items = group_items
+
+        if stage_best_coverage > best_coverage_pct:
+            best_coverage_pct = stage_best_coverage
+            best_cloud_cover = stage_best_cloud
+            best_date = stage_best_date
+            best_date_items = stage_best_items
+
+        # If we found >= 98% coverage in this stage, we are done!
+        if best_coverage_pct >= 98.0:
+            logger.info(f"Excellent coverage ({best_coverage_pct:.2f}%) found in {label}. Terminating date search.")
+            break
+        else:
+            logger.info(f"Best coverage in {label} was {best_coverage_pct:.2f}% (< 98%). Trying next stage...")
+
+    if not best_date_items:
+        logger.warning("No valid Sentinel-2 dates found with coverage.")
         return None, None
 
-    logger.info(f"Using Sentinel-2: {items[0].id} (cloud={items[0].properties.get('eo:cloud_cover', '?')}%)")
+    logger.info(f"Selected best date: {best_date} ({best_coverage_pct:.2f}% coverage, {len(best_date_items)} tiles)")
 
-    lon_min, lat_min, lon_max, lat_max = bbox
-    fetch_size = output_size  # No more min(output_size, 512) cap!
+    # Resolve native dimensions first using B04 of the first tile
+    try:
+        first_item = best_date_items[0]
+        red_href = first_item.assets["B04"].href
+        signed_red_href = planetary_computer.sign(red_href)
+        with rasterio.open(signed_red_href) as src:
+            src_crs = src.crs
+            if src_crs and str(src_crs).upper() not in ("EPSG:4326", "CRS84"):
+                left, bottom, right, top = transform_bounds(
+                    "EPSG:4326", src_crs,
+                    lon_min, lat_min, lon_max, lat_max
+                )
+            else:
+                left, bottom, right, top = lon_min, lat_min, lon_max, lat_max
+            window = from_bounds(left, bottom, right, top, src.transform)
+            
+            if output_size is None:
+                output_shape = (int(round(window.height)), int(round(window.width)))
+                logger.info(f"  Native Sentinel-2 shape computed: {output_shape[1]}x{output_shape[0]} (10m/px)")
+            elif isinstance(output_size, int):
+                output_shape = (output_size, output_size)
+            else:
+                output_shape = output_size
+    except Exception as e:
+        logger.error(f"Failed to inspect dimensions: {e}")
+        return None, None
 
-    # Try each scene candidate until one succeeds (some COGs may be slow/unavailable)
-    for attempt_item in items:
-        bands_data = {}
-        item_id = attempt_item.id
-        logger.info(f"  Attempting S2 band reads from {item_id} in parallel...")
-        success = True
+    out_h, out_w = output_shape
 
-        tasks = {}
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            for band in ["B04", "B03", "B02", "B08"]:
-                href = attempt_item.assets[band].href
+    # Download bands for all tiles on the selected date and merge them
+    band_components = defaultdict(list)
+    success = True
+    tasks = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        for band in ["B04", "B03", "B02", "B08"]:
+            for item in best_date_items:
+                href = item.assets[band].href
                 signed_href = planetary_computer.sign(href)
                 future = executor.submit(
                     _fetch_single_s2_band,
                     signed_href,
                     lon_min, lat_min, lon_max, lat_max,
-                    fetch_size
+                    output_shape
                 )
-                tasks[future] = band
+                tasks[future] = (band, item.id)
 
-            # Wait for all futures with a timeout of 45 seconds
-            completed, unresolved = concurrent.futures.wait(tasks.keys(), timeout=45)
-            
-            # Cancel unresolved tasks
-            for future in unresolved:
-                future.cancel()
+        completed, unresolved = concurrent.futures.wait(tasks.keys(), timeout=None)
 
-            for future in tasks:
-                band = tasks[future]
-                if future in completed:
-                    try:
-                        bands_data[band] = future.result()
-                        logger.info(f"    {band} ✓")
-                    except Exception as e:
-                        logger.warning(f"    {band} failed ({item_id}): {e}")
-                        success = False
-                else:
-                    logger.warning(f"    {band} timed out ({item_id})")
-                    success = False
+        for future in tasks:
+            band, item_id = tasks[future]
+            try:
+                data = future.result()
+                band_components[band].append(data)
+            except Exception as e:
+                logger.warning(f"  Failed to read {band} for {item_id}: {e}")
+                success = False
 
-        if success and len(bands_data) == 4:
-            logger.info(f"  All bands fetched from {item_id}")
-            break
-        else:
-            logger.warning(f"  Scene {item_id} incomplete, trying next candidate...")
-            bands_data = {}
-
-    if not bands_data or len(bands_data) < 4:
-        logger.warning("  All S2 candidates failed — falling back to mock true color")
+    if not success or len(band_components) < 4:
+        logger.warning("  Failed to download all bands for the selected tiles.")
         return None, None
+
+    # Merge/mosaic the band components by taking the maximum/non-zero value
+    bands_data = {}
+    for band in ["B04", "B03", "B02", "B08"]:
+        components = band_components[band]
+        merged = np.zeros((out_h, out_w), dtype=np.float32)
+        for comp in components:
+            valid = (comp > 0)
+            merged[valid] = comp[valid]
+        bands_data[band] = merged
 
     red = bands_data["B04"]
     green = bands_data["B03"]
@@ -318,7 +429,8 @@ def fetch_sentinel2_true_color(bbox, year, output_size=1024):
     cloud_mask = (red > 3500) & (green > 3500) & (blue > 3500)
 
     # Stretch to 8-bit using percentile normalization on non-cloud pixels
-    stretched = np.zeros((fetch_size, fetch_size, 3), dtype=np.uint8)
+    h, w = red.shape
+    stretched = np.zeros((h, w, 3), dtype=np.uint8)
     for i, band_data in enumerate([red, green, blue]):
         land_pixels = band_data[~cloud_mask & (band_data > 0)]
         if len(land_pixels) > 100:
@@ -362,19 +474,29 @@ def generate_zone_assets(zone_key, bbox, years, use_network=True):
 
         if use_network:
             try:
-                fg_mask, esri_mask = fetch_esri_landcover_tile(bbox, year)
-                if fg_mask is not None:
-                    logger.info(f"  ESRI Land Cover fetched for {year}")
-                    mask_rgb = mask_to_rgb(fg_mask)
-                    Image.fromarray(mask_rgb).save(zone_dir / f"mask_rgb_{year}.png")
-
-                tc_rgb, bands = fetch_sentinel2_true_color(bbox, year)
+                # 1. Fetch Sentinel-2 first to get the native 10m/px shape
+                tc_rgb, bands = fetch_sentinel2_true_color(bbox, year, output_size=None)
+                
                 if tc_rgb is not None:
+                    h, w = tc_rgb.shape[:2]
+                    logger.info(f"  Sentinel-2 fetched at native size: {w}x{h} (10m/px)")
                     Image.fromarray(tc_rgb).save(zone_dir / f"true_color_{year}.png")
+                    
                     if bands is not None:
                         red, green, blue, nir = bands
                         ndvi_img = generate_ndvi_map_from_bands(red, green, blue, nir)
                         Image.fromarray(ndvi_img).save(zone_dir / f"ndvi_map_{year}.png")
+                    
+                    # 2. Fetch ESRI Land Cover at the matching native shape
+                    fg_mask, esri_mask = fetch_esri_landcover_tile(bbox, year, output_shape=(h, w))
+                else:
+                    logger.warning("  Sentinel-2 fetch failed, falling back to 1024px for ESRI LC")
+                    fg_mask, esri_mask = fetch_esri_landcover_tile(bbox, year, output_shape=(1024, 1024))
+                
+                if fg_mask is not None:
+                    logger.info(f"  ESRI Land Cover fetched for {year}")
+                    mask_rgb = mask_to_rgb(fg_mask)
+                    Image.fromarray(mask_rgb).save(zone_dir / f"mask_rgb_{year}.png")
 
             except Exception as e:
                 logger.warning(f"  Network fetch failed for {zone_key}/{year}: {e}. Using mock.")
@@ -581,7 +703,7 @@ if __name__ == "__main__":
 
     for zone_key, zone_cfg in zones.items():
         bbox = zone_cfg["bbox"]
-        years = zone_cfg.get("years", [2018, 2020, 2022, 2024])
+        years = zone_cfg.get("years", [2017, 2019, 2021, 2023])
         logger.info(f"\n{'='*60}")
         logger.info(f"Zone: {zone_cfg.get('name', zone_key)}  BBox: {bbox}  Years: {years}")
         generate_zone_assets(zone_key, bbox, years, use_network=use_network)
