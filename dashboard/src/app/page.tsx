@@ -1,8 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import ThreeGlobe from "../components/ThreeGlobe";
-import ThreeMapProjection from "../components/ThreeMapProjection";
+import dynamic from "next/dynamic";
+
+// Dynamically import ThreeJS components to prevent SSR canvas size and window reference bugs
+const ThreeGlobe = dynamic(() => import("../components/ThreeGlobe"), { ssr: false });
+const ThreeMapProjection = dynamic(() => import("../components/ThreeMapProjection"), { ssr: false });
 
 interface ZoneData {
   key: string;
@@ -87,7 +90,7 @@ interface AnalysisResponse {
 
 const API_ORIGIN = "http://localhost:8000";
 
-// Fallback zones data in case API is offline
+// Fallback simulated data in case FastAPI server is offline
 const FALLBACK_ZONES: ZoneData[] = [
   {
     key: "nashik_north",
@@ -148,19 +151,19 @@ export default function Home() {
   const [selectedZoneKey, setSelectedZoneKey] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"globe" | "projection">("globe");
 
-  // Analysis criteria states
+  // Filter criteria states
   const [beforeYear, setBeforeYear] = useState<number>(2017);
   const [afterYear, setAfterYear] = useState<number>(2025);
   const [vizMode, setVizMode] = useState<string>("AI Land Use Classification");
   const [sliderValue, setSliderValue] = useState<number>(50);
   const [opacity, setOpacity] = useState<number>(0.85);
 
-  // Analysis result
+  // Loaded analysis response
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState<boolean>(false);
   const [apiWarning, setApiWarning] = useState<string | null>(null);
 
-  // Class colors definition
+  // Color classes for dashboard tags
   const classColors: { [key: string]: string } = {
     Buildings: "bg-[#DC2626]",
     Cropland: "bg-[#D4A017]",
@@ -169,11 +172,11 @@ export default function Home() {
     "Bare Soil": "bg-[#D2B48C]",
   };
 
-  // Fetch zones on mount
+  // Fetch zones list
   useEffect(() => {
     fetch(`${API_ORIGIN}/api/zones`)
       .then((res) => {
-        if (!res.ok) throw new Error("Backend offline");
+        if (!res.ok) throw new Error("API Offline");
         return res.json();
       })
       .then((data) => {
@@ -181,13 +184,13 @@ export default function Home() {
         setApiWarning(null);
       })
       .catch((err) => {
-        console.warn("FastAPI backend offline, loading local simulation fallback data.", err);
+        console.warn("FastAPI offline, launching simulation fallback.", err);
         setZones(FALLBACK_ZONES);
-        setApiWarning("API Server offline. Displaying local simulation dataset.");
+        setApiWarning("API Server Offline. Simulating local dataset.");
       });
   }, []);
 
-  // Fetch analysis data when zone or years change
+  // Fetch metrics when selection modifies
   useEffect(() => {
     if (!selectedZoneKey) return;
     setLoadingAnalysis(true);
@@ -203,8 +206,7 @@ export default function Home() {
         setAnalysis(data);
       })
       .catch((err) => {
-        console.warn("FastAPI analysis endpoint offline, fabricating simulated metrics.", err);
-        // Create simulated local analysis response
+        console.warn("FastAPI analytics offline, fabricating metrics locally.", err);
         const activeZone = zones.find((z) => z.key === selectedZoneKey);
         if (activeZone) {
           const years = activeZone.years;
@@ -214,7 +216,6 @@ export default function Home() {
             if (activeZone.key === "vijayawada_west") abiVal = 1.3 - stepRatio * 0.15;
             if (activeZone.key === "nashik_north") abiVal = 0.8 - stepRatio * 0.22;
             
-            // Adjust pixels based on zone key
             const baseBuild = activeZone.key === "bengaluru" ? 5000000 : 2000000;
             const b_px = Math.round(baseBuild * (1 + stepRatio * 0.5));
             const c_px = Math.round(3000000 * (1 - stepRatio * 0.45));
@@ -241,11 +242,6 @@ export default function Home() {
 
           const recBefore = timeseries.find((t) => t.year === beforeYear) || timeseries[0];
           const recAfter = timeseries.find((t) => t.year === afterYear) || timeseries[timeseries.length - 1];
-
-          // Set dummy overlay URLs
-          // Since server is offline, we'll try to fallback to place-hold visuals or nothing
-          const beforeOverlayName = vizMode === "True Color Satellite Image" ? "true_color" : vizMode === "NDVI Vegetation Map" ? "ndvi_map" : "mask_rgb";
-          const afterOverlayName = vizMode === "True Color Satellite Image" ? "true_color" : vizMode === "NDVI Vegetation Map" ? "ndvi_map" : "mask_rgb";
 
           const mockAnalysis: AnalysisResponse = {
             zone_info: {
@@ -301,21 +297,20 @@ export default function Home() {
       });
   }, [selectedZoneKey, beforeYear, afterYear, vizMode, zones]);
 
-  // Handle zone selection from dropdown or map pins
+  // Select zone handler
   const handleSelectZone = (key: string) => {
     setSelectedZoneKey(key);
-    // Find zone to reset before/after year clamp
     const zoneObj = zones.find((z) => z.key === key);
     if (zoneObj && zoneObj.years.length > 0) {
       setBeforeYear(zoneObj.years[0]);
       setAfterYear(zoneObj.years[zoneObj.years.length - 1]);
     }
-    setActiveTab("projection"); // switch workspace view to focus on the 3D Map Projection
+    setActiveTab("projection");
   };
 
   const currentZone = zones.find((z) => z.key === selectedZoneKey) || null;
 
-  // Determine overlay image paths for before and after
+  // Resolve active projection texture links
   const beforeOverlayUrl = analysis
     ? vizMode === "True Color Satellite Image"
       ? analysis.overlays.before.true_color
@@ -332,7 +327,7 @@ export default function Home() {
       : analysis.overlays.after.mask
     : null;
 
-  // SVG Line Chart calculations
+  // Custom vector line chart
   const renderLineChart = () => {
     if (!analysis || analysis.timeseries.length === 0) return null;
 
@@ -350,7 +345,6 @@ export default function Home() {
     const maxAbi = Math.max(...abis, 2.0);
     const minAbi = 0.0;
 
-    // Mapping helpers
     const getX = (year: number) => {
       const idx = years.indexOf(year);
       return margin.left + (idx / (years.length - 1)) * xMax;
@@ -360,10 +354,8 @@ export default function Home() {
       return margin.top + yMax - ((abi - minAbi) / (maxAbi - minAbi)) * yMax;
     };
 
-    // Build SVG points
     const points = data.map((d) => `${getX(d.year)},${getY(d.abi)}`).join(" ");
 
-    // Build gradient fill points
     const areaPoints = `${getX(years[0])},${margin.top + yMax} ` + 
                        points + 
                        ` ${getX(years[years.length - 1])},${margin.top + yMax}`;
@@ -372,12 +364,12 @@ export default function Home() {
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto mt-2">
         <defs>
           <linearGradient id="abiGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#10B981" stopOpacity="0.3" />
+            <stop offset="0%" stopColor="#10B981" stopOpacity="0.25" />
             <stop offset="100%" stopColor="#10B981" stopOpacity="0.0" />
           </linearGradient>
         </defs>
 
-        {/* Background Y Gridlines */}
+        {/* Y-Axis lines */}
         {[0.5, 1.0, 1.5, 2.0].map((val) => {
           const y = getY(val);
           return (
@@ -390,7 +382,7 @@ export default function Home() {
           );
         })}
 
-        {/* X Axis Labels */}
+        {/* X-Axis ticks */}
         {data.map((d) => {
           const x = getX(d.year);
           return (
@@ -403,13 +395,9 @@ export default function Home() {
           );
         })}
 
-        {/* Area Gradient Fill */}
         <polygon points={areaPoints} fill="url(#abiGrad)" />
-
-        {/* Trend line */}
         <polyline fill="none" stroke="#059669" strokeWidth="2.5" points={points} />
 
-        {/* Highlight points */}
         {data.map((d) => {
           const cx = getX(d.year);
           const cy = getY(d.abi);
@@ -420,7 +408,7 @@ export default function Home() {
                 cx={cx}
                 cy={cy}
                 r={isSelected ? 6 : 4}
-                className={`${isSelected ? "fill-emerald-600 stroke-white stroke-2" : "fill-white stroke-emerald-500 stroke-1.5"} cursor-pointer hover:r-7 transition-all`}
+                className={`${isSelected ? "fill-emerald-600 stroke-white stroke-2" : "fill-white stroke-emerald-500 stroke-1.5"} cursor-pointer`}
               />
               <text x={cx} y={cy - 9} textAnchor="middle" className="text-[9px] fill-slate-900 font-bold bg-white px-1">
                 {d.abi.toFixed(2)}
@@ -434,67 +422,65 @@ export default function Home() {
 
   return (
     <div className="flex-1 flex flex-col font-sans">
-      {/* Header bar */}
+      {/* Top Navigation Bar */}
       <header className="sticky top-0 bg-white border-b border-slate-200/90 z-20 px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <div className="flex items-center gap-2.5">
-            <span className="text-2xl">🌾</span>
             <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">FarmGuard</h1>
-            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wide">
-              Satyukt Technology
+            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wide font-mono">
+              SATYUKT TECHNOLOGY
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Satellite Deep-Learning Farmland Encroachment & Environmental Risk MRV Auditor
+          <p className="text-xs text-slate-500 mt-1 font-mono uppercase tracking-wider">
+            Satellite Farmland Encroachment & Environmental Risk Auditor
           </p>
         </div>
 
         {apiWarning && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 flex items-center gap-2 text-xs text-amber-800">
-            <span className="animate-ping w-2 h-2 rounded-full bg-amber-500 flex-shrink-0" />
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 flex items-center gap-2 text-xs text-amber-800 font-mono">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0 animate-ping" />
             <span>{apiWarning}</span>
           </div>
         )}
       </header>
 
-      {/* Main split-screen panel */}
+      {/* Main Split Window */}
       <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-0 overflow-hidden">
         
-        {/* Left Side: 3D Visual Workspace (Takes 7 columns) */}
-        <section className="lg:col-span-7 bg-[#f8fafc] border-r border-slate-200 flex flex-col min-h-[400px] lg:min-h-0 relative">
+        {/* Left Side: 3D Visual Workspace */}
+        <section className="lg:col-span-7 bg-[#f8fafc] border-r border-slate-200 flex flex-col min-h-[420px] lg:min-h-0 relative">
           
-          {/* Workspace Controls */}
-          <div className="absolute top-4 left-4 z-10 flex bg-white border border-slate-200/80 p-1 rounded-lg shadow-xs pointer-events-auto">
+          {/* Flat glass selector tab */}
+          <div className="absolute top-4 left-4 z-10 flex bg-white/90 backdrop-blur-md border border-slate-200/80 p-1 rounded-lg shadow-xs pointer-events-auto">
             <button
               onClick={() => setActiveTab("globe")}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+              className={`px-3 py-1.5 rounded-md text-[11px] font-mono uppercase tracking-wider transition-all ${
                 activeTab === "globe"
                   ? "bg-slate-900 text-white shadow-xs"
                   : "text-slate-500 hover:text-slate-900"
               }`}
             >
-              🌐 3D Globe View
+              Globe Map
             </button>
             <button
               onClick={() => {
                 if (!selectedZoneKey) {
-                  // select first zone if none selected
                   if (zones.length > 0) handleSelectZone(zones[0].key);
                 } else {
                   setActiveTab("projection");
                 }
               }}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+              className={`px-3 py-1.5 rounded-md text-[11px] font-mono uppercase tracking-wider transition-all ${
                 activeTab === "projection"
                   ? "bg-slate-900 text-white shadow-xs"
                   : "text-slate-500 hover:text-slate-900"
               }`}
             >
-              🗺️ 3D Area Projection
+              Area Projection
             </button>
           </div>
 
-          {/* Interactive WebGL Container */}
+          {/* ThreeJS Visual Layer */}
           <div className="flex-1 w-full relative">
             {activeTab === "globe" ? (
               <ThreeGlobe
@@ -514,26 +500,26 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Right Side: Sidebar Controls and Metrics (Takes 5 columns) */}
+        {/* Right Side: Sidebar Controls and Metrics */}
         <section className="lg:col-span-5 bg-white flex flex-col divide-y divide-slate-100 overflow-y-auto max-h-[calc(100vh-80px)]">
           
-          {/* Section 1: Region & Configuration Selectors */}
+          {/* Setup Configurator */}
           <div className="p-6 space-y-4">
-            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Analysis Setup</h2>
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Analysis Setup</h2>
 
             {/* Zone Selector */}
             <div className="space-y-1.5">
-              <label htmlFor="zone-select" className="text-xs font-bold text-slate-700">Select Farmland Zone</label>
+              <label htmlFor="zone-select" className="text-xs font-bold text-slate-700 font-mono uppercase">Target Buffer Zone</label>
               <select
                 id="zone-select"
                 value={selectedZoneKey || ""}
                 onChange={(e) => handleSelectZone(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 font-semibold focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 font-semibold focus:outline-hidden focus:ring-1 focus:ring-emerald-500 font-mono"
               >
-                <option value="" disabled>-- Choose a Region --</option>
+                <option value="" disabled>Select a Region</option>
                 {zones.map((zone) => (
                   <option key={zone.key} value={zone.key}>
-                    {zone.name}
+                    {zone.name.toUpperCase()}
                   </option>
                 ))}
               </select>
@@ -541,15 +527,15 @@ export default function Home() {
 
             {currentZone && (
               <>
-                {/* Year Selectors */}
+                {/* Year Selection */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label htmlFor="before-year" className="text-xs font-bold text-slate-700">Before Year</label>
+                    <label htmlFor="before-year" className="text-xs font-bold text-slate-700 font-mono uppercase">Baseline Year</label>
                     <select
                       id="before-year"
                       value={beforeYear}
                       onChange={(e) => setBeforeYear(Number(e.target.value))}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 font-semibold focus:outline-hidden"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 font-semibold focus:outline-hidden font-mono"
                     >
                       {currentZone.years.map((yr) => (
                         <option key={yr} value={yr} disabled={yr >= afterYear}>
@@ -560,12 +546,12 @@ export default function Home() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label htmlFor="after-year" className="text-xs font-bold text-slate-700">After Year</label>
+                    <label htmlFor="after-year" className="text-xs font-bold text-slate-700 font-mono uppercase">Audited Year</label>
                     <select
                       id="after-year"
                       value={afterYear}
                       onChange={(e) => setAfterYear(Number(e.target.value))}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 font-semibold focus:outline-hidden"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 font-semibold focus:outline-hidden font-mono"
                     >
                       {currentZone.years.map((yr) => (
                         <option key={yr} value={yr} disabled={yr <= beforeYear}>
@@ -576,28 +562,28 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Visualization mode dropdown */}
+                {/* Projection Overlay Modes */}
                 <div className="space-y-1.5">
-                  <label htmlFor="viz-mode" className="text-xs font-bold text-slate-700">Comparison Projection Overlay</label>
+                  <label htmlFor="viz-mode" className="text-xs font-bold text-slate-700 font-mono uppercase">Raster Overlay Mode</label>
                   <select
                     id="viz-mode"
                     value={vizMode}
                     onChange={(e) => setVizMode(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 font-semibold focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 font-semibold focus:outline-hidden focus:ring-1 focus:ring-emerald-500 font-mono"
                   >
-                    <option value="AI Land Use Classification">🌾 AI Land Use Classification</option>
-                    <option value="True Color Satellite Image">📸 True Color Satellite Image</option>
-                    <option value="NDVI Vegetation Map">🌱 NDVI Vegetation Index</option>
+                    <option value="AI Land Use Classification">AI Land Use Classification</option>
+                    <option value="True Color Satellite Image">True Color Satellite Image</option>
+                    <option value="NDVI Vegetation Map">NDVI Vegetation Map</option>
                   </select>
                 </div>
 
-                {/* Opacity and wipe sliders */}
+                {/* Sliders for split wipe and opacity */}
                 {activeTab === "projection" && (
                   <div className="space-y-4 pt-2">
-                    {/* Split Wipe Slider */}
+                    {/* Swipe slider */}
                     <div className="space-y-1.5">
                       <div className="flex justify-between items-center">
-                        <label htmlFor="wipe-slider" className="text-xs font-bold text-slate-700">3D Split-Wipe Transition</label>
+                        <label htmlFor="wipe-slider" className="text-xs font-bold text-slate-700 font-mono uppercase">Split-Wipe Divider</label>
                         <span className="text-[10px] font-mono text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded-sm">
                           {sliderValue}% After
                         </span>
@@ -613,10 +599,10 @@ export default function Home() {
                       />
                     </div>
 
-                    {/* Opacity Slider */}
+                    {/* Opacity slider */}
                     <div className="space-y-1.5">
                       <div className="flex justify-between items-center">
-                        <label htmlFor="opacity-slider" className="text-xs font-bold text-slate-700">Overlay Transparency (Opacity)</label>
+                        <label htmlFor="opacity-slider" className="text-xs font-bold text-slate-700 font-mono uppercase">Texture Opacity</label>
                         <span className="text-[10px] font-mono text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded-sm">
                           {Math.round(opacity * 100)}%
                         </span>
@@ -637,25 +623,24 @@ export default function Home() {
             )}
           </div>
 
-          {/* Section 2: Metrics Card & Report */}
+          {/* Metrics Panel */}
           <div className="p-6">
             {!selectedZoneKey ? (
               <div className="text-center py-12 px-6">
-                <span className="text-3xl block mb-2">👆</span>
-                <p className="text-sm font-semibold text-slate-500">
-                  Select a farmland zone in the setup panel or click on the 3D Earth pins to run satellite analytics.
+                <p className="text-xs font-bold text-slate-400 font-mono tracking-widest uppercase">
+                  Select a farmland region in the setup panel or click on the 3D Globe pins to inspect risk metrics.
                 </p>
               </div>
             ) : loadingAnalysis ? (
               <div className="flex flex-col items-center justify-center py-20 gap-3">
-                <div className="w-8 h-8 rounded-full border-4 border-slate-100 border-t-emerald-600 animate-spin" />
-                <span className="text-xs font-bold text-slate-400 font-mono tracking-widest uppercase">
-                  Processing SAR & Spectral Bands...
+                <div className="w-6 h-6 rounded-full border-2 border-slate-100 border-t-emerald-600 animate-spin" />
+                <span className="text-[10px] font-bold text-slate-400 font-mono tracking-wider uppercase">
+                  Fetching Sentinel Bands...
                 </span>
               </div>
             ) : analysis ? (
               <div className="space-y-6">
-                {/* Custom Grade Badge & Status Header */}
+                {/* Grading header */}
                 <div
                   className={`border rounded-xl p-4 transition-all ${
                     analysis.metrics.grade === "F"
@@ -667,16 +652,16 @@ export default function Home() {
                 >
                   <div className="flex justify-between items-start gap-4">
                     <div>
-                      <h3 className="text-base font-extrabold text-slate-900">
+                      <h3 className="text-sm font-bold text-slate-900 font-mono uppercase">
                         {analysis.zone_info.name}
                       </h3>
-                      <p className="text-xs font-semibold text-slate-500 mt-0.5">
-                        Satyukt relevance: {analysis.zone_info.satyukt_relevance}
+                      <p className="text-[11px] text-slate-500 mt-1 font-mono uppercase tracking-wider">
+                        Relevance: {analysis.zone_info.satyukt_relevance}
                       </p>
                     </div>
-                    {/* Status Badge */}
+                    {/* Grade Badge */}
                     <div
-                      className={`text-center font-black rounded-lg text-lg min-w-12 py-1 px-2.5 ${
+                      className={`text-center font-black rounded-lg text-lg min-w-10 py-0.5 px-2 font-mono ${
                         analysis.metrics.grade === "F"
                           ? "bg-red-100 text-red-700"
                           : analysis.metrics.grade === "C"
@@ -690,43 +675,43 @@ export default function Home() {
 
                   <div className="mt-4 flex flex-wrap gap-2 items-center">
                     {analysis.metrics.encroachment_alert ? (
-                      <span className="alert-pulse inline-flex items-center gap-1 bg-red-100 text-red-800 text-[10px] font-extrabold px-2.5 py-1 rounded-full border border-red-200 uppercase tracking-wider">
-                        ⚠️ Critical Encroachment Alert
+                      <span className="alert-pulse inline-flex items-center bg-red-100 text-red-800 text-[9px] font-bold px-2.5 py-1 rounded-full border border-red-200 uppercase tracking-widest font-mono">
+                        Encroachment Alert Active
                       </span>
                     ) : (
-                      <span className="stable-pulse inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2.5 py-1 rounded-full border border-emerald-200 uppercase tracking-wider">
-                        ✅ Buffer Zone Stable
+                      <span className="stable-pulse inline-flex items-center bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2.5 py-1 rounded-full border border-emerald-200 uppercase tracking-widest font-mono">
+                        Buffer Zone Stable
                       </span>
                     )}
 
-                    <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-2.5 py-1 rounded-full border border-slate-200 uppercase tracking-wider">
-                      Period: {beforeYear} → {afterYear}
+                    <span className="bg-slate-100 text-slate-700 text-[9px] font-bold px-2.5 py-1 rounded-full border border-slate-200 uppercase tracking-widest font-mono">
+                      Period: {beforeYear} to {afterYear}
                     </span>
                   </div>
                 </div>
 
-                {/* Grid of Key Indicators */}
+                {/* Key indicators layout */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="border border-slate-200 rounded-xl p-4">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block font-mono">
                       ABI Ratio ({afterYear})
                     </span>
-                    <span className="text-2xl font-black text-slate-900 block mt-1">
+                    <span className="text-xl font-bold text-slate-900 block mt-1 font-mono">
                       {analysis.metrics.latest_abi.toFixed(3)}
                     </span>
-                    <span className="text-[11px] font-semibold text-slate-500 mt-1 block">
+                    <span className="text-[10px] text-slate-400 mt-1 block font-mono">
                       Warning: &lt;0.5 • Critical: &lt;0.3
                     </span>
                   </div>
 
                   <div className="border border-slate-200 rounded-xl p-4">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block font-mono">
                       Cropland Loss
                     </span>
-                    <span className="text-2xl font-black text-slate-900 block mt-1 text-red-600">
+                    <span className="text-xl font-bold text-slate-900 block mt-1 text-red-600 font-mono">
                       -{analysis.metrics.cropland_loss_ha.toFixed(1)} ha
                     </span>
-                    <span className="text-[11px] font-semibold text-slate-500 mt-1 block">
+                    <span className="text-[10px] text-slate-400 mt-1 block font-mono">
                       Estimated loss since 2017
                     </span>
                   </div>
@@ -734,15 +719,15 @@ export default function Home() {
                   <div className="border border-slate-200 rounded-xl p-4 col-span-2">
                     <div className="flex justify-between items-center">
                       <div>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block font-mono">
                           Buffer Change ({beforeYear} vs {afterYear})
                         </span>
-                        <span className="text-lg font-black text-slate-900 mt-1 block">
+                        <span className="text-sm font-bold text-slate-950 mt-1 block font-mono uppercase">
                           Overall ABI Shift
                         </span>
                       </div>
                       <div
-                        className={`text-lg font-black ${
+                        className={`text-base font-bold font-mono ${
                           analysis.comparison.abi_change_pct < 0 ? "text-red-600" : "text-emerald-600"
                         }`}
                       >
@@ -753,26 +738,26 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Audit Description */}
+                {/* Description */}
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs leading-relaxed text-slate-600 italic">
                   &ldquo;{analysis.metrics.description}&rdquo;
                 </div>
 
-                {/* Timeseries SVG Trend Chart */}
+                {/* Trend Chart */}
                 <div className="border border-slate-200 rounded-xl p-4">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-                    ABI ratio trend timeline
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block font-mono">
+                    ABI Ratio Trend Timeline
                   </span>
                   {renderLineChart()}
                 </div>
 
-                {/* Class Shift Table */}
+                {/* Class Shift Metrics Table */}
                 <div className="border border-slate-200 rounded-xl overflow-hidden">
                   <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                      Land cover shifts (%)
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest font-mono">
+                      Land Cover Shifts (%)
                     </span>
-                    <span className="text-[10px] font-bold text-slate-500">
+                    <span className="text-[9px] font-bold text-slate-500 font-mono">
                       {beforeYear} vs {afterYear}
                     </span>
                   </div>
@@ -780,7 +765,7 @@ export default function Home() {
                     {analysis.transitions.map((trans) => (
                       <div key={trans.class_name} className="px-4 py-3 flex items-center justify-between text-xs">
                         <div className="flex items-center gap-2">
-                          <span className={`w-3 h-3 rounded-xs ${classColors[trans.class_name] || "bg-slate-400"}`} />
+                          <span className={`w-2.5 h-2.5 rounded-xs ${classColors[trans.class_name] || "bg-slate-400"}`} />
                           <span className="font-semibold text-slate-700">{trans.class_name}</span>
                         </div>
                         <div className="flex items-center gap-6">
@@ -788,7 +773,7 @@ export default function Home() {
                           <span className="font-mono text-slate-400">→</span>
                           <span className="font-mono text-slate-900 font-semibold">{trans.after_pct.toFixed(1)}%</span>
                           <span
-                            className={`font-mono font-bold w-14 text-right ${
+                            className={`font-mono font-bold w-12 text-right ${
                               trans.trend_shift_pct > 0.05
                                 ? "text-emerald-600"
                                 : trans.trend_shift_pct < -0.05
