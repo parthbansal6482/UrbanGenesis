@@ -1,12 +1,12 @@
 {
   "zone": "vijayawada_west",
   "latest_year": 2025,
-  "abi": 3.1919,
+  "abi": 3.2685,
   "grade": "A",
   "label": "Healthy Buffer",
   "description": "Cropland well-protected. Strong agricultural buffer intact. No MRV flags.",
-  "overall_abi_change_pct": -15.2,
-  "cropland_loss_ha": 3114.73,
+  "overall_abi_change_pct": -13.1,
+  "cropland_loss_ha": 2328.44,
   "encroachment_alert": false,
   "timeseries": [
     {
@@ -78,22 +78,22 @@
       "water_pct": 8.05
     },
     {
-      "abi": 3.1919,
-      "cropland_pixels": 2777776,
-      "vegetation_pixels": 661220,
-      "water_pixels": 504668,
-      "buildings_pixels": 1235515,
-      "buffer_pixels": 3943664,
-      "encroach_pixels": 1235515,
-      "cropland_pct": 46.87,
-      "encroach_pct": 20.85,
+      "abi": 3.2685,
+      "cropland_pixels": 2856405,
+      "vegetation_pixels": 636530,
+      "water_pixels": 492948,
+      "buildings_pixels": 1219485,
+      "buffer_pixels": 3985883,
+      "encroach_pixels": 1219485,
+      "cropland_pct": 48.2,
+      "encroach_pct": 20.58,
       "year": 2025,
-      "soil_pixels": 747317,
-      "soil_pct": 12.61,
-      "buildings_pct": 20.85,
-      "vegetation_pct": 11.16,
-      "water_pct": 8.52
+      "soil_pixels": 721128,
+      "soil_pct": 12.17,
+      "buildings_pct": 20.58,
+      "vegetation_pct": 10.74,
+      "water_pct": 8.32
     }
   ],
-  "summary": "vijayawada_west \u2014 ABI: 3.19 (-15.2% since 2017). Cropland lost: 3114.7 ha. Grade: A \u2014 Healthy Buffer. No active encroachment alert."
+  "summary": "vijayawada_west \u2014 ABI: 3.27 (-13.1% since 2017). Cropland lost: 2328.4 ha. Grade: A \u2014 Healthy Buffer. No active encroachment alert."
 }

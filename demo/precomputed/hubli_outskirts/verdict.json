@@ -1,12 +1,12 @@
 {
   "zone": "hubli_outskirts",
   "latest_year": 2025,
-  "abi": 3.0229,
+  "abi": 3.2306,
   "grade": "A",
   "label": "Healthy Buffer",
   "description": "Cropland well-protected. Strong agricultural buffer intact. No MRV flags.",
-  "overall_abi_change_pct": -20.1,
-  "cropland_loss_ha": 4292.37,
+  "overall_abi_change_pct": -14.7,
+  "cropland_loss_ha": 2997.63,
   "encroachment_alert": false,
   "timeseries": [
     {
@@ -78,22 +78,22 @@
       "water_pct": 1.26
     },
     {
-      "abi": 3.0229,
-      "cropland_pixels": 3486657,
-      "vegetation_pixels": 280393,
-      "water_pixels": 78933,
-      "buildings_pixels": 1272265,
-      "buffer_pixels": 3845983,
-      "encroach_pixels": 1272265,
-      "cropland_pct": 58.7,
-      "encroach_pct": 21.42,
+      "abi": 3.2306,
+      "cropland_pixels": 3616131,
+      "vegetation_pixels": 426258,
+      "water_pixels": 86989,
+      "buildings_pixels": 1278200,
+      "buffer_pixels": 4129378,
+      "encroach_pixels": 1278200,
+      "cropland_pct": 60.88,
+      "encroach_pct": 21.52,
       "year": 2025,
-      "soil_pixels": 821444,
-      "soil_pct": 13.83,
-      "buildings_pct": 21.42,
-      "vegetation_pct": 4.72,
-      "water_pct": 1.33
+      "soil_pixels": 532114,
+      "soil_pct": 8.96,
+      "buildings_pct": 21.52,
+      "vegetation_pct": 7.18,
+      "water_pct": 1.46
     }
   ],
-  "summary": "hubli_outskirts \u2014 ABI: 3.02 (-20.1% since 2017). Cropland lost: 4292.4 ha. Grade: A \u2014 Healthy Buffer. No active encroachment alert."
+  "summary": "hubli_outskirts \u2014 ABI: 3.23 (-14.7% since 2017). Cropland lost: 2997.6 ha. Grade: A \u2014 Healthy Buffer. No active encroachment alert."
 }

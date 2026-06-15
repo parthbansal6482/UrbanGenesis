@@ -478,23 +478,26 @@ def analyse_zone(zone_name: str, before_year: int, after_year: int, viz_mode: st
         # Dynamic Grade styling
         g = data.get("grade", "?")
         if g in ["A", "B"]:
-            card_bg = "linear-gradient(135deg, #F0FDF4 0%, #ECFDF5 100%)"
-            card_border = "#D1FAE5"
-            grade_color = "#16A34A"
+            card_bg = "#F0FDF4"
+            card_border = "#BBF7D0"
+            grade_color = "#15803D"
             badge_emoji = "🟢"
         elif g in ["C", "D"]:
-            card_bg = "linear-gradient(135deg, #FFFBEB 0%, #FFF7ED 100%)"
+            card_bg = "#FFFBEB"
             card_border = "#FDE68A"
-            grade_color = "#D97706"
+            grade_color = "#B45309"
             badge_emoji = "🟡"
         else:  # F
-            card_bg = "linear-gradient(135deg, #FEF2F2 0%, #FFF5F5 100%)"
+            card_bg = "#FEF2F2"
             card_border = "#FCA5A5"
-            grade_color = "#DC2626"
+            grade_color = "#B91C1C"
             badge_emoji = "🔴"
 
         alert_active = data.get("encroachment_alert", False)
-        alert_text = "⚠️ Encroachment Alert Active" if alert_active else "✅ Buffer boundary stable"
+        if alert_active:
+            alert_text = '<span class="alert-pulse">⚠️ Encroachment Alert Active</span>'
+        else:
+            alert_text = '<span class="stable-badge">✅ Buffer boundary stable</span>'
 
         # Build detailed transition comparison rows in style-safe HTML
         table_rows_html = ""
@@ -511,17 +514,17 @@ def analyse_zone(zone_name: str, before_year: int, after_year: int, viz_mode: st
                 pct_after  = rec_after.get(field, 0.0)
                 diff = pct_after - pct_before
                 if diff > 0.05:
-                    trend_str = f"<span style='color:#16A34A; font-weight:600;'>📈 +{diff:.2f}%</span>"
+                    trend_str = f"<span style='color:#15803D; font-weight:600;'>📈 +{diff:.2f}%</span>"
                 elif diff < -0.05:
-                    trend_str = f"<span style='color:#DC2626; font-weight:600;'>📉 {diff:.2f}%</span>"
+                    trend_str = f"<span style='color:#B91C1C; font-weight:600;'>📉 {diff:.2f}%</span>"
                 else:
-                    trend_str = "<span style='color:#6B7280;'>🟢 Stable</span>"
+                    trend_str = "<span style='color:#64748B;'>🟢 Stable</span>"
                 
                 table_rows_html += f"""
-                <tr style="border-bottom: 1px solid #E5E7EB;">
-                    <td style="padding:10px 12px; font-weight:500; color:#374151;">{label}</td>
-                    <td style="padding:10px 12px; text-align:right; color:#1F2937;">{pct_before:.2f}%</td>
-                    <td style="padding:10px 12px; text-align:right; color:#1F2937;">{pct_after:.2f}%</td>
+                <tr style="border-bottom: 1px solid #E2E8F0;">
+                    <td style="padding:10px 12px; font-weight:500; color:#334155;">{label}</td>
+                    <td style="padding:10px 12px; text-align:right; color:#0F172A;">{pct_before:.2f}%</td>
+                    <td style="padding:10px 12px; text-align:right; color:#0F172A;">{pct_after:.2f}%</td>
                     <td style="padding:10px 12px; text-align:right;">{trend_str}</td>
                 </tr>
                 """
@@ -530,53 +533,50 @@ def analyse_zone(zone_name: str, before_year: int, after_year: int, viz_mode: st
         cropland_loss_ha = data.get("cropland_loss_ha", 0.0)
         summary_md = f"""
 <div style="background: {card_bg};
-     border: 1px solid {card_border}; border-radius: 16px; padding: 22px 26px; margin-bottom: 16px; color: #1F2937; font-family: 'Inter', sans-serif;">
+     border: 1px solid {card_border}; border-radius: 12px; padding: 22px 26px; margin-bottom: 16px; color: #334155; font-family: 'Inter', sans-serif;">
 
-<h3 style="margin-top: 0; margin-bottom: 14px; font-size: 1.35em; font-weight: 700; color: #111827; font-family: 'Outfit', sans-serif;">
+<h3 style="margin-top: 0; margin-bottom: 14px; font-size: 1.25em; font-weight: 800; color: #0F172A; font-family: 'Inter', sans-serif;">
   {badge_emoji} {ZONE_DISPLAY_NAMES.get(zone_name, zone_name)} Risk Assessment
 </h3>
 
-<table style="width:100%; border-collapse:collapse; font-size:0.95em; margin-bottom:18px; color: #1F2937;">
-<tr>
-  <td style="padding:8px 12px; background:#F9FAFB; border-radius:8px 0 0 8px; font-weight:600; color:#4B5563;">📍 Region</td>
-  <td style="padding:8px 12px; background:#F9FAFB; color:#1F2937;">{ZONE_DISPLAY_NAMES.get(zone_name, zone_name)}</td>
-  <td style="padding:8px 12px; background:#F9FAFB; font-weight:600; color:#4B5563;">🗓️ Period</td>
-  <td style="padding:8px 12px; background:#F9FAFB; border-radius:0 8px 8px 0; color:#1F2937;">{before_year} → {after_year}</td>
+<table style="width:100%; border-collapse:collapse; font-size:0.95em; margin-bottom:18px; color: #334155;">
+<tr style="border-bottom: 1px solid rgba(0,0,0,0.05);">
+  <td style="padding:10px 0; font-weight:600; color:#64748B;">📍 Region</td>
+  <td style="padding:10px 0; font-weight:500; color:#0F172A;">{ZONE_DISPLAY_NAMES.get(zone_name, zone_name)}</td>
+  <td style="padding:10px 0; font-weight:600; color:#64748B; padding-left:20px;">🗓️ Period</td>
+  <td style="padding:10px 0; font-weight:500; color:#0F172A;">{before_year} → {after_year}</td>
 </tr>
-<tr style="height:8px;"></tr>
-<tr>
-  <td style="padding:8px 12px; background:#F9FAFB; border-radius:8px 0 0 8px; font-weight:600; color:#4B5563;">📊 ABI Score ({after_year})</td>
-  <td style="padding:8px 12px; background:#F9FAFB; color:#1F2937;"><b>{latest_abi:.3f}</b></td>
-  <td style="padding:8px 12px; background:#F9FAFB; font-weight:600; color:#4B5563;">📉 Buffer Change</td>
-  <td style="padding:8px 12px; background:#F9FAFB; border-radius:0 8px 8px 0; color:{'#DC2626' if chg_pct < 0 else '#16A34A'};"><b>{chg_pct:+.1f}%</b></td>
+<tr style="border-bottom: 1px solid rgba(0,0,0,0.05);">
+  <td style="padding:10px 0; font-weight:600; color:#64748B;">📊 ABI Score ({after_year})</td>
+  <td style="padding:10px 0; font-weight:700; color:#0F172A;">{latest_abi:.3f}</td>
+  <td style="padding:10px 0; font-weight:600; color:#64748B; padding-left:20px;">📉 Buffer Change</td>
+  <td style="padding:10px 0; font-weight:700; color:{'#B91C1C' if chg_pct < 0 else '#15803D'};">{chg_pct:+.1f}%</td>
 </tr>
-<tr style="height:8px;"></tr>
-<tr>
-  <td style="padding:8px 12px; background:#F9FAFB; border-radius:8px 0 0 8px; font-weight:600; color:#4B5563;">🌾 Cropland Lost</td>
-  <td style="padding:8px 12px; background:#F9FAFB; color:#1F2937;"><b>{cropland_loss_ha:.1f} ha</b></td>
-  <td style="padding:8px 12px; background:#F9FAFB; font-weight:600; color:#4B5563;">🚨 Alert Status</td>
-  <td style="padding:8px 12px; background:#F9FAFB; border-radius:0 8px 8px 0; color:#1F2937; font-weight:600;">{alert_text}</td>
+<tr style="border-bottom: 1px solid rgba(0,0,0,0.05);">
+  <td style="padding:10px 0; font-weight:600; color:#64748B;">🌾 Cropland Lost</td>
+  <td style="padding:10px 0; font-weight:700; color:#0F172A;">{cropland_loss_ha:.1f} ha</td>
+  <td style="padding:10px 0; font-weight:600; color:#64748B; padding-left:20px;">🚨 Alert Status</td>
+  <td style="padding:10px 0;">{alert_text}</td>
 </tr>
-<tr style="height:8px;"></tr>
 <tr>
-  <td style="padding:8px 12px; background:#F9FAFB; border-radius:8px 0 0 8px; font-weight:600; color:#4B5563;">🏅 Risk Grade</td>
-  <td style="padding:8px 12px; background:#F9FAFB; color:{grade_color}; font-weight:700; font-size:1.05em;" colspan="3">{badge_emoji} <b>Grade {g}</b> — {data.get('label','')}</td>
+  <td style="padding:10px 0; font-weight:600; color:#64748B;">🏅 Risk Grade</td>
+  <td style="padding:10px 0; color:{grade_color}; font-weight:800; font-size:1.05em;" colspan="3">{badge_emoji} <b>Grade {g}</b> — {data.get('label','')}</td>
 </tr>
 </table>
 
-<div style="background: rgba(255,255,255,0.7); border-radius: 12px; padding: 12px 16px; border: 1px solid rgba(0,0,0,0.05); margin-bottom: 20px; font-style: italic; color: #4B5563;">
+<div style="background: rgba(255,255,255,0.6); border-radius: 8px; padding: 12px 16px; border: 1px solid rgba(15, 23, 42, 0.08); margin-bottom: 20px; font-style: italic; color: #334155; line-height: 1.5;">
   &ldquo;{data.get('description', '')}&rdquo;
 </div>
 
-<h4 style="margin-top: 0; margin-bottom: 10px; font-size: 1.1em; font-weight: 700; color: #111827; font-family: 'Outfit', sans-serif;">📋 Land Cover Transition Metrics ({before_year} vs {after_year})</h4>
+<h4 style="margin-top: 24px; margin-bottom: 12px; font-size: 1.1em; font-weight: 700; color: #0F172A; font-family: 'Inter', sans-serif;">📋 Land Cover Transition Metrics ({before_year} vs {after_year})</h4>
 
-<table style="width:100%; border-collapse:collapse; font-size:0.92em; border: 1px solid #E5E7EB; border-radius: 8px; overflow: hidden; background: white; color:#1F2937;">
+<table style="width:100%; border-collapse:collapse; font-size:0.92em; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; background: white; color:#334155;">
 <thead>
-  <tr style="background:#F3F4F6; border-bottom: 2px solid #E5E7EB;">
-    <th style="padding:10px 12px; text-align:left; font-weight:600; color:#374151;">Land Class</th>
-    <th style="padding:10px 12px; text-align:right; font-weight:600; color:#374151;">{before_year} %</th>
-    <th style="padding:10px 12px; text-align:right; font-weight:600; color:#374151;">{after_year} %</th>
-    <th style="padding:10px 12px; text-align:right; font-weight:600; color:#374151;">Trend Shift</th>
+  <tr style="background:#F8FAFC; border-bottom: 2px solid #E2E8F0;">
+    <th style="padding:10px 12px; text-align:left; font-weight:600; color:#475569;">Land Class</th>
+    <th style="padding:10px 12px; text-align:right; font-weight:600; color:#475569;">{before_year} %</th>
+    <th style="padding:10px 12px; text-align:right; font-weight:600; color:#475569;">{after_year} %</th>
+    <th style="padding:10px 12px; text-align:right; font-weight:600; color:#475569;">Trend Shift</th>
   </tr>
 </thead>
 <tbody>
@@ -585,6 +585,7 @@ def analyse_zone(zone_name: str, before_year: int, after_year: int, viz_mode: st
 </table>
 
 </div>
+
 """
 
     except Exception as e:
@@ -641,36 +642,45 @@ ZONE_CHOICES_TUPLES = [
 ]
 
 custom_css = """
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 body, .gradio-container {
     font-family: 'Inter', sans-serif !important;
     background: #F8FAFC !important;
 }
 
-#title-block { text-align: center; margin-bottom: 8px; }
-#title-block h1 { 
-    font-family: 'Outfit', sans-serif !important;
-    font-size: 2.4em !important;
-    font-weight: 800 !important;
-    background: linear-gradient(135deg, #059669, #D4A017, #0284C7);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    margin-bottom: 0px !important;
+#title-block { 
+    text-align: left; 
+    margin-bottom: 24px; 
+    border-bottom: 1px solid #E2E8F0; 
+    padding-bottom: 16px; 
 }
-#title-block p {
-    color: #6B7280 !important;
+#title-block h1 { 
+    font-family: 'Inter', sans-serif !important;
+    font-size: 1.85em !important;
+    font-weight: 800 !important;
+    color: #0F172A !important;
+    margin-bottom: 4px !important;
+}
+#title-block h3 {
+    color: #64748B !important;
     font-size: 1.05em !important;
-    margin-top: 4px !important;
+    font-weight: 500 !important;
+    margin-top: 2px !important;
 }
 
 .panel-card {
     background: white;
-    border-radius: 16px;
+    border-radius: 12px;
     padding: 20px;
-    border: 1px solid #E5E7EB;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+    border: 1px solid #E2E8F0;
+    box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.05);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.panel-card:hover {
+    border-color: #CBD5E1;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
 }
 
 .legend-grid {
@@ -684,38 +694,68 @@ body, .gradio-container {
     display: flex;
     align-items: center;
     font-size: 0.88em;
-    color: #374151;
+    color: #475569;
 }
 
 .legend-dot {
     width: 14px;
     height: 14px;
-    border-radius: 4px;
+    border-radius: 3px;
     margin-right: 7px;
     flex-shrink: 0;
 }
 
 button#analyse-btn {
-    background: linear-gradient(135deg, #059669, #D4A017) !important;
-    border: none !important;
-    border-radius: 12px !important;
+    background: #059669 !important;
+    border: 1px solid #047857 !important;
+    border-radius: 8px !important;
     font-weight: 600 !important;
-    font-size: 1.05em !important;
+    font-size: 0.95em !important;
     color: white !important;
-    padding: 12px 24px !important;
+    padding: 10px 20px !important;
     cursor: pointer !important;
-    transition: all 0.2s ease !important;
+    transition: all 0.15s ease !important;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
 }
 
 button#analyse-btn:hover {
-    opacity: 0.92 !important;
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 16px rgba(5, 150, 105, 0.35) !important;
+    background: #047857 !important;
+    transform: translateY(-0.5px) !important;
+    box-shadow: 0 4px 12px rgba(5, 150, 105, 0.15) !important;
 }
 
 .tab-nav button {
     font-family: 'Inter', sans-serif !important;
     font-weight: 500 !important;
+}
+
+@keyframes pulse-ring {
+    0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.3); }
+    70% { box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+}
+
+.alert-pulse {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    font-weight: 600;
+    font-size: 0.82em;
+    background: #FEE2E2;
+    color: #991B1B;
+    border: 1px solid #FCA5A5;
+    animation: pulse-ring 2s infinite;
+}
+
+.stable-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    font-weight: 600;
+    font-size: 0.82em;
+    background: #D1FAE5;
+    color: #065F46;
+    border: 1px solid #A7F3D0;
 }
 """
 
