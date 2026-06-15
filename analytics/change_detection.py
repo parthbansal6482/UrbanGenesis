@@ -14,7 +14,7 @@ from typing import Dict
 def compute_transition_matrix(
     mask_before: np.ndarray,
     mask_after: np.ndarray,
-    num_classes: int = 7,
+    num_classes: int = 6,
 ) -> np.ndarray:
     """
     Compute transition matrix where entry (i, j) is the number of pixels
@@ -23,7 +23,7 @@ def compute_transition_matrix(
     Args:
         mask_before: np.ndarray (H, W) — earlier year mask
         mask_after:  np.ndarray (H, W) — later year mask
-        num_classes: total number of classes (default: 7 for FarmGuard)
+        num_classes: total number of classes (default: 6 for FarmGuard)
 
     Returns:
         np.ndarray of shape (num_classes, num_classes), dtype int64
@@ -49,7 +49,7 @@ def detect_urban_expansion(
 ) -> Dict[str, float]:
     """
     Detects key indicators of urban expansion into agricultural buffer:
-    - Buffer (cropland + vegetation + water) loss to encroachment (buildings + roads)
+    - Buffer (cropland + vegetation + water) loss to encroachment (buildings)
     - Net growth in built-up area
 
     Args:
@@ -62,10 +62,10 @@ def detect_urban_expansion(
     """
     transition = compute_transition_matrix(mask_before, mask_after)
 
-    # Buffer classes: 3=cropland, 4=dense_vegetation, 5=water
-    # Encroachment classes: 1=buildings, 2=roads
-    buffer_indices = [3, 4, 5]
-    encroach_indices = [1, 2]
+    # Buffer classes: 2=cropland, 3=dense_vegetation, 4=water
+    # Encroachment classes: 1=buildings
+    buffer_indices = [2, 3, 4]
+    encroach_indices = [1]
 
     total_pixels = mask_before.size
     buffer_to_encroach_pixels = 0

@@ -9,23 +9,23 @@ from analytics.abi import compute_abi
 from analytics.grader import assign_grade, detect_encroachment_alert, generate_verdict
 
 def test_transition_matrix():
-    mask_before = np.array([[3, 3], [1, 1]], dtype=np.uint8)
-    mask_after  = np.array([[1, 3], [1, 1]], dtype=np.uint8)
+    mask_before = np.array([[2, 2], [1, 1]], dtype=np.uint8)
+    mask_after  = np.array([[1, 2], [1, 1]], dtype=np.uint8)
     
-    matrix = compute_transition_matrix(mask_before, mask_after, num_classes=7)
+    matrix = compute_transition_matrix(mask_before, mask_after, num_classes=6)
     
     # Verify shape
-    assert matrix.shape == (7, 7)
+    assert matrix.shape == (6, 6)
     # Check transitions
-    assert matrix[3, 1] == 1  # 1 pixel of class 3 changed to class 1
-    assert matrix[3, 3] == 1  # 1 pixel of class 3 stayed class 3
+    assert matrix[2, 1] == 1  # 1 pixel of class 2 changed to class 1
+    assert matrix[2, 2] == 1  # 1 pixel of class 2 stayed class 2
     assert matrix[1, 1] == 2  # 2 pixels of class 1 stayed class 1
     assert matrix.sum() == 4  # Total pixels
 
 def test_detect_urban_expansion_metrics():
-    # 3=cropland, 4=vegetation, 5=water (buffer)
-    # 1=buildings, 2=roads (encroachment)
-    mask_before = np.array([[3, 4], [5, 1]], dtype=np.uint8)
+    # 2=cropland, 3=vegetation, 4=water (buffer)
+    # 1=buildings (encroachment)
+    mask_before = np.array([[2, 3], [4, 1]], dtype=np.uint8)
     mask_after  = np.array([[1, 1], [1, 1]], dtype=np.uint8)
     
     metrics = detect_urban_expansion(mask_before, mask_after)
@@ -38,25 +38,25 @@ def test_detect_urban_expansion_metrics():
 def test_compute_cropland_loss_ha():
     # resolution_m = 10m. 1 pixel = 100 m2. 100 pixels = 10000 m2 = 1.0 ha
     mask_before = np.zeros((10, 10), dtype=np.uint8)
-    mask_before[:, :] = 3  # 100 cropland pixels
+    mask_before[:, :] = 2  # 100 cropland pixels
     
     mask_after = np.zeros((10, 10), dtype=np.uint8)
-    mask_after[:, :] = 3  # start with all cropland pixels
+    mask_after[:, :] = 2  # start with all cropland pixels
     mask_after[0, :] = 1  # 10 buildings, 90 cropland remaining
     
     loss = compute_cropland_loss_ha(mask_before, mask_after, resolution_m=10.0)
     assert np.isclose(loss, 0.10)  # 10 pixels lost = 1000 m2 = 0.1 ha
 
 def test_abi_calculation():
-    # 3=cropland, 4=veg, 5=water, 1=buildings, 2=roads, 6=soil, 0=bg
+    # 2=cropland, 3=veg, 4=water, 1=buildings, 5=soil, 0=bg
     mask = np.array([
-        [3, 3, 4],
-        [5, 1, 2],
-        [6, 0, 0]
+        [2, 2, 3],
+        [4, 1, 1],
+        [5, 0, 0]
     ], dtype=np.uint8)
     
-    # buffer pixels: 3, 3, 4, 5 (total 4)
-    # encroach pixels: 1, 2 (total 2)
+    # buffer pixels: 2, 2, 3, 4 (total 4)
+    # encroach pixels: 1, 1 (total 2)
     # ABI = 4 / 2 = 2.0
     res = compute_abi(mask)
     assert res["abi"] == 2.0

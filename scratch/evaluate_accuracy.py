@@ -19,11 +19,10 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "settings.yaml"
 CLASS_COLORS = {
     0: (0, 0, 0),
     1: (220, 38, 38),
-    2: (130, 90, 44),
-    3: (212, 160, 23),
-    4: (34, 139, 34),
-    5: (30, 100, 200),
-    6: (210, 180, 140),
+    2: (212, 160, 23),
+    3: (34, 139, 34),
+    4: (30, 100, 200),
+    5: (210, 180, 140),
 }
 
 def rgb_to_mask(rgb_img):
@@ -40,11 +39,7 @@ def compute_spatial_features(mask):
     dist_buildings = distance_transform_edt(1 - buildings)
     features.append(dist_buildings)
     
-    roads = (mask == 2).astype(np.uint8)
-    dist_roads = distance_transform_edt(1 - roads)
-    features.append(dist_roads)
-    
-    crops = (mask == 3).astype(np.uint8)
+    crops = (mask == 2).astype(np.uint8)
     dist_crops = distance_transform_edt(1 - crops)
     features.append(dist_crops)
     return features

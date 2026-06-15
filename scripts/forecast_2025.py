@@ -31,11 +31,10 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "settings.yaml"
 CLASS_COLORS = {
     0: (0, 0, 0),        # background - black
     1: (220, 38, 38),    # buildings - red
-    2: (130, 90, 44),    # roads - brown
-    3: (212, 160, 23),   # cropland - gold
-    4: (34, 139, 34),    # dense vegetation - green
-    5: (30, 100, 200),   # water - blue
-    6: (210, 180, 140),  # bare soil - tan
+    2: (212, 160, 23),   # cropland - gold
+    3: (34, 139, 34),    # dense vegetation - green
+    4: (30, 100, 200),   # water - blue
+    5: (210, 180, 140),  # bare soil - tan
 }
 
 def rgb_to_mask(rgb_img):
@@ -64,13 +63,8 @@ def compute_spatial_features(mask):
     dist_buildings = distance_transform_edt(1 - buildings)
     features.append(dist_buildings)
     
-    # 2. Distance to roads (class 2)
-    roads = (mask == 2).astype(np.uint8)
-    dist_roads = distance_transform_edt(1 - roads)
-    features.append(dist_roads)
-    
-    # 3. Distance to cropland (class 3)
-    crops = (mask == 3).astype(np.uint8)
+    # 2. Distance to cropland (class 2)
+    crops = (mask == 2).astype(np.uint8)
     dist_crops = distance_transform_edt(1 - crops)
     features.append(dist_crops)
     
@@ -137,32 +131,30 @@ def forecast_zone(zone_key, zone_cfg):
     logger.info(f"  Saved predicted mask: {output_path.name}")
 
     # Load existing verdict.json
-    verdict_path = zone_dir / "verdict.json"
-    with open(verdict_path) as f:
-        verdict = json.load(f)
+    # Rebuild entire timeseries from scratch to remove road class and update indices
+    new_timeseries = []
+    for yr in [2017, 2019, 2021, 2023]:
+        yr_mask = masks[yr]
+        yr_stats = compute_abi(yr_mask)
+        yr_stats["year"] = yr
+        yr_stats["soil_pixels"] = int((yr_mask == 5).sum())
+        yr_stats["soil_pct"] = round(yr_stats["soil_pixels"] / yr_mask.size * 100, 2)
+        yr_stats["buildings_pct"] = round(yr_stats["buildings_pixels"] / yr_mask.size * 100, 2)
+        yr_stats["vegetation_pct"] = round(yr_stats["vegetation_pixels"] / yr_mask.size * 100, 2)
+        yr_stats["water_pct"] = round(yr_stats["water_pixels"] / yr_mask.size * 100, 2)
+        yr_stats["cropland_pct"] = round(yr_stats["cropland_pixels"] / yr_mask.size * 100, 2)
+        new_timeseries.append(yr_stats)
 
-    # Calculate 2025 statistics
-    stats = compute_abi(forecast_mask)
+    # Append 2025 stats
     stats["year"] = 2025
-    stats["soil_pixels"] = int((forecast_mask == 6).sum())
-    stats["soil_pct"] = round(stats["soil_pixels"] / forecast_mask.size * 100, 2)
-    stats["buildings_pct"] = round(stats["buildings_pixels"] / forecast_mask.size * 100, 2)
-    stats["roads_pct"] = round(stats["roads_pixels"] / forecast_mask.size * 100, 2)
-    stats["vegetation_pct"] = round(stats["vegetation_pixels"] / forecast_mask.size * 100, 2)
-    stats["water_pct"] = round(stats["water_pixels"] / forecast_mask.size * 100, 2)
-    stats["cropland_pct"] = round(stats["cropland_pixels"] / forecast_mask.size * 100, 2)
-
-    # Deduplicate timeseries years: replace 2025 if it already exists
-    timeseries = verdict.get("timeseries", [])
-    timeseries = [r for r in timeseries if r["year"] != 2025]
-    timeseries.append(stats)
-    timeseries = sorted(timeseries, key=lambda x: x["year"])
+    new_timeseries.append(stats)
+    new_timeseries = sorted(new_timeseries, key=lambda x: x["year"])
 
     # Calculate cropland loss between 2017 and 2025
     loss_ha = compute_cropland_loss_ha(masks[2017], forecast_mask, resolution_m=10.0)
 
     # Re-run grader to generate final verdict summary
-    new_verdict = generate_verdict(timeseries, zone_key, cropland_loss_ha=loss_ha)
+    new_verdict = generate_verdict(new_timeseries, zone_key, cropland_loss_ha=loss_ha)
     
     with open(verdict_path, "w") as f:
         json.dump(new_verdict, f, indent=2)

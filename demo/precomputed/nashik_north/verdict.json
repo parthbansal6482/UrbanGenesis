@@ -1,12 +1,12 @@
 {
   "zone": "nashik_north",
   "latest_year": 2025,
-  "abi": 7.5289,
+  "abi": 7.0727,
   "grade": "A",
   "label": "Healthy Buffer",
   "description": "Cropland well-protected. Strong agricultural buffer intact. No MRV flags.",
-  "overall_abi_change_pct": -42.8,
-  "cropland_loss_ha": 633.44,
+  "overall_abi_change_pct": -46.3,
+  "cropland_loss_ha": 6287.84,
   "encroachment_alert": true,
   "timeseries": [
     {
@@ -15,7 +15,6 @@
       "vegetation_pixels": 21360,
       "water_pixels": 100665,
       "buildings_pixels": 397374,
-      "roads_pixels": 0,
       "buffer_pixels": 5231668,
       "encroach_pixels": 397374,
       "cropland_pct": 83.76,
@@ -24,7 +23,6 @@
       "soil_pixels": 471014,
       "soil_pct": 7.72,
       "buildings_pct": 6.51,
-      "roads_pct": 0.0,
       "vegetation_pct": 0.35,
       "water_pct": 1.65
     },
@@ -34,7 +32,6 @@
       "vegetation_pixels": 2920,
       "water_pixels": 77602,
       "buildings_pixels": 485022,
-      "roads_pixels": 0,
       "buffer_pixels": 5138349,
       "encroach_pixels": 485022,
       "cropland_pct": 82.91,
@@ -43,7 +40,6 @@
       "soil_pixels": 476685,
       "soil_pct": 7.81,
       "buildings_pct": 7.95,
-      "roads_pct": 0.0,
       "vegetation_pct": 0.05,
       "water_pct": 1.27
     },
@@ -53,7 +49,6 @@
       "vegetation_pixels": 6174,
       "water_pixels": 95192,
       "buildings_pixels": 581736,
-      "roads_pixels": 0,
       "buffer_pixels": 5042103,
       "encroach_pixels": 581736,
       "cropland_pct": 80.99,
@@ -62,7 +57,6 @@
       "soil_pixels": 476217,
       "soil_pct": 7.81,
       "buildings_pct": 9.54,
-      "roads_pct": 0.0,
       "vegetation_pct": 0.1,
       "water_pct": 1.56
     },
@@ -72,7 +66,6 @@
       "vegetation_pixels": 12945,
       "water_pixels": 102919,
       "buildings_pixels": 672965,
-      "roads_pixels": 0,
       "buffer_pixels": 4830939,
       "encroach_pixels": 672965,
       "cropland_pct": 77.3,
@@ -81,29 +74,26 @@
       "soil_pixels": 596152,
       "soil_pct": 9.77,
       "buildings_pct": 11.03,
-      "roads_pct": 0.0,
       "vegetation_pct": 0.21,
       "water_pct": 1.69
     },
     {
-      "abi": 7.5289,
-      "cropland_pixels": 5046299,
+      "abi": 7.0727,
+      "cropland_pixels": 4480859,
       "vegetation_pixels": 0,
-      "water_pixels": 100506,
-      "buildings_pixels": 683608,
-      "roads_pixels": 0,
-      "buffer_pixels": 5146805,
-      "encroach_pixels": 683608,
-      "cropland_pct": 82.73,
-      "encroach_pct": 11.21,
+      "water_pixels": 101853,
+      "buildings_pixels": 647940,
+      "buffer_pixels": 4582712,
+      "encroach_pixels": 647940,
+      "cropland_pct": 73.46,
+      "encroach_pct": 10.62,
       "year": 2025,
-      "soil_pixels": 269643,
-      "soil_pct": 4.42,
-      "buildings_pct": 11.21,
-      "roads_pct": 0.0,
+      "soil_pixels": 869404,
+      "soil_pct": 14.25,
+      "buildings_pct": 10.62,
       "vegetation_pct": 0.0,
-      "water_pct": 1.65
+      "water_pct": 1.67
     }
   ],
-  "summary": "nashik_north \u2014 ABI: 7.53 (-42.8% since 2017). Cropland lost: 633.4 ha. Grade: A \u2014 Healthy Buffer. \u26a0\ufe0f Encroachment Alert Active."
+  "summary": "nashik_north \u2014 ABI: 7.07 (-46.3% since 2017). Cropland lost: 6287.8 ha. Grade: A \u2014 Healthy Buffer. \u26a0\ufe0f Encroachment Alert Active."
 }

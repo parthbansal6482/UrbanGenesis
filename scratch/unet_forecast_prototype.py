@@ -23,9 +23,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from analytics.abi import compute_abi, compute_cropland_loss_ha
 from analytics.grader import generate_verdict
 
-# Optimize CPU threads for PyTorch to prevent Mac overheating
-torch.set_num_threads(2)
-torch.set_num_interop_threads(1)
+# Detect device & optimize CPU threads if running on CPU (e.g. to prevent Mac overheating)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if device.type == "cpu":
+    torch.set_num_threads(2)
+    torch.set_num_interop_threads(1)
 import gc
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -38,11 +40,10 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "settings.yaml"
 CLASS_COLORS = {
     0: (0, 0, 0),
     1: (220, 38, 38),
-    2: (130, 90, 44),
-    3: (212, 160, 23),
-    4: (34, 139, 34),
-    5: (30, 100, 200),
-    6: (210, 180, 140),
+    2: (212, 160, 23),
+    3: (34, 139, 34),
+    4: (30, 100, 200),
+    5: (210, 180, 140),
 }
 
 def rgb_to_mask(rgb_img):
@@ -137,8 +138,8 @@ class PatchDataset(Dataset):
         patch_prev2 = self.mask_prev2[y:y+self.patch_size, x:x+self.patch_size]
         patch_prev  = self.mask_prev[y:y+self.patch_size, x:x+self.patch_size]
         
-        prev2_oh = np.eye(7)[patch_prev2].transpose(2, 0, 1).astype(np.float32)
-        prev_oh  = np.eye(7)[patch_prev].transpose(2, 0, 1).astype(np.float32)
+        prev2_oh = np.eye(6)[patch_prev2].transpose(2, 0, 1).astype(np.float32)
+        prev_oh  = np.eye(6)[patch_prev].transpose(2, 0, 1).astype(np.float32)
         X = np.concatenate([prev2_oh, prev_oh], axis=0)
         
         if self.mask_target is not None:
@@ -167,38 +168,62 @@ def forecast_zone(zone_key, zone_cfg):
 
     h, w = masks[2017].shape
 
+    # Dynamic performance tuning parameters for GPU vs CPU
+    batch_size = 32 if device.type == "cuda" else 4
+    num_workers = 2 if device.type == "cuda" else 0
+    pin_memory = True if device.type == "cuda" else False
+
     # Prepare Training DataLoader (2017 + 2019 -> 2021)
     train_dataset = PatchDataset(masks[2017], masks[2019], masks[2021], patch_size=128)
-    train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
+    train_loader = DataLoader(
+        train_dataset, 
+        batch_size=batch_size, 
+        shuffle=True, 
+        num_workers=num_workers, 
+        pin_memory=pin_memory
+    )
 
     # Build and train U-Net
-    model = MiniUNet(in_channels=14, out_channels=7)
+    model = MiniUNet(in_channels=12, out_channels=6).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.005)
+    scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda"))
 
     model.train()
-    for epoch in range(3):
+    epochs = 10 if device.type == "cuda" else 3
+    for epoch in range(epochs):
         epoch_loss = 0.0
         for X_batch, y_batch in train_loader:
+            X_batch, y_batch = X_batch.to(device), y_batch.to(device)
             optimizer.zero_grad()
-            outputs = model(X_batch)
-            loss = criterion(outputs, y_batch)
-            loss.backward()
-            optimizer.step()
+            with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
+                outputs = model(X_batch)
+                loss = criterion(outputs, y_batch)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
             epoch_loss += loss.item() * X_batch.size(0)
-        logger.info(f"  Epoch {epoch+1}/3 | Loss: {epoch_loss/len(train_dataset):.4f}")
+        logger.info(f"  Epoch {epoch+1}/{epochs} | Loss: {epoch_loss/len(train_dataset):.4f}")
 
     # Validate on 2023
     val_dataset = PatchDataset(masks[2019], masks[2021], masks[2023], patch_size=128)
-    val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False)
+    val_loader = DataLoader(
+        val_dataset, 
+        batch_size=batch_size, 
+        shuffle=False, 
+        num_workers=num_workers, 
+        pin_memory=pin_memory
+    )
     
     model.eval()
     correct = 0
     total = 0
     with torch.no_grad():
         for X_batch, y_batch in val_loader:
-            outputs = model(X_batch)
-            preds = torch.argmax(outputs, dim=1)
+            X_batch, y_batch = X_batch.to(device), y_batch.to(device)
+            with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
+                outputs = model(X_batch)
+                preds = torch.argmax(outputs, dim=1)
             correct += (preds == y_batch).sum().item()
             total += y_batch.numel()
     
@@ -207,7 +232,13 @@ def forecast_zone(zone_key, zone_cfg):
 
     # Forecast 2025
     forecast_dataset = PatchDataset(masks[2021], masks[2023], patch_size=128)
-    forecast_loader = DataLoader(forecast_dataset, batch_size=4, shuffle=False)
+    forecast_loader = DataLoader(
+        forecast_dataset, 
+        batch_size=batch_size, 
+        shuffle=False, 
+        num_workers=num_workers, 
+        pin_memory=pin_memory
+    )
     
     h_crop = forecast_dataset.h_patches * 128
     w_crop = forecast_dataset.w_patches * 128
@@ -216,8 +247,10 @@ def forecast_zone(zone_key, zone_cfg):
     patch_idx = 0
     with torch.no_grad():
         for X_batch in forecast_loader:
-            outputs = model(X_batch)
-            preds = torch.argmax(outputs, dim=1).cpu().numpy()
+            X_batch = X_batch.to(device)
+            with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
+                outputs = model(X_batch)
+                preds = torch.argmax(outputs, dim=1).cpu().numpy()
             
             for b in range(preds.shape[0]):
                 py = patch_idx // forecast_dataset.w_patches
@@ -231,9 +264,9 @@ def forecast_zone(zone_key, zone_cfg):
     full_forecast_mask = np.zeros((h, w), dtype=np.uint8)
     full_forecast_mask[:h_crop, :w_crop] = forecast_mask
     if h > h_crop:
-        full_forecast_mask[h_crop:, :] = 6
+        full_forecast_mask[h_crop:, :] = 5
     if w > w_crop:
-        full_forecast_mask[:, w_crop:] = 6
+        full_forecast_mask[:, w_crop:] = 5
 
     # Save mask_rgb_2025.png
     forecast_rgb = mask_to_rgb(full_forecast_mask)
@@ -244,27 +277,36 @@ def forecast_zone(zone_key, zone_cfg):
     # Calculate 2025 stats
     stats = compute_abi(full_forecast_mask)
     stats["year"] = 2025
-    stats["soil_pixels"] = int((full_forecast_mask == 6).sum())
+    stats["soil_pixels"] = int((full_forecast_mask == 5).sum())
     stats["soil_pct"] = round(stats["soil_pixels"] / full_forecast_mask.size * 100, 2)
     stats["buildings_pct"] = round(stats["buildings_pixels"] / full_forecast_mask.size * 100, 2)
-    stats["roads_pct"] = round(stats["roads_pixels"] / full_forecast_mask.size * 100, 2)
     stats["vegetation_pct"] = round(stats["vegetation_pixels"] / full_forecast_mask.size * 100, 2)
     stats["water_pct"] = round(stats["water_pixels"] / full_forecast_mask.size * 100, 2)
     stats["cropland_pct"] = round(stats["cropland_pixels"] / full_forecast_mask.size * 100, 2)
 
-    # Load and update verdict.json
-    verdict_path = zone_dir / "verdict.json"
-    with open(verdict_path) as f:
-        verdict = json.load(f)
+    # Rebuild entire timeseries from scratch to remove road class and update indices
+    new_timeseries = []
+    for yr in [2017, 2019, 2021, 2023]:
+        yr_mask = masks[yr]
+        yr_stats = compute_abi(yr_mask)
+        yr_stats["year"] = yr
+        yr_stats["soil_pixels"] = int((yr_mask == 5).sum())
+        yr_stats["soil_pct"] = round(yr_stats["soil_pixels"] / yr_mask.size * 100, 2)
+        yr_stats["buildings_pct"] = round(yr_stats["buildings_pixels"] / yr_mask.size * 100, 2)
+        yr_stats["vegetation_pct"] = round(yr_stats["vegetation_pixels"] / yr_mask.size * 100, 2)
+        yr_stats["water_pct"] = round(yr_stats["water_pixels"] / yr_mask.size * 100, 2)
+        yr_stats["cropland_pct"] = round(yr_stats["cropland_pixels"] / yr_mask.size * 100, 2)
+        new_timeseries.append(yr_stats)
 
-    timeseries = verdict.get("timeseries", [])
-    timeseries = [r for r in timeseries if r["year"] != 2025]
-    timeseries.append(stats)
-    timeseries = sorted(timeseries, key=lambda x: x["year"])
+    # Append 2025 stats
+    stats["year"] = 2025
+    new_timeseries.append(stats)
+    new_timeseries = sorted(new_timeseries, key=lambda x: x["year"])
 
     loss_ha = compute_cropland_loss_ha(masks[2017], full_forecast_mask, resolution_m=10.0)
-    new_verdict = generate_verdict(timeseries, zone_key, cropland_loss_ha=loss_ha)
+    new_verdict = generate_verdict(new_timeseries, zone_key, cropland_loss_ha=loss_ha)
     
+    verdict_path = zone_dir / "verdict.json"
     with open(verdict_path, "w") as f:
         json.dump(new_verdict, f, indent=2)
     

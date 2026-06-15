@@ -13,7 +13,7 @@ tiling:
 
 model:
   backbone: nvidia/mit-b2
-  num_classes: 7                 # 0–6 including cropland
+  num_classes: 6                 # 0–5 (cropland added, roads removed)
   batch_size: 8
   learning_rate: 0.00006
   weight_decay: 0.01
@@ -25,20 +25,18 @@ model:
 classes:
   0: background
   1: buildings
-  2: roads
-  3: cropland                    # NEW — key addition for ABI
-  4: dense_vegetation
-  5: water
-  6: bare_soil
+  2: cropland                    # Shifted from 3
+  3: dense_vegetation            # Shifted from 4
+  4: water                       # Shifted from 5
+  5: bare_soil                   # Shifted from 6
 
 class_colors:                    # RGB for visualisation
   0: [0, 0, 0]                   # background — black
   1: [220, 38, 38]               # buildings — red
-  2: [130, 90, 44]               # roads — brown
-  3: [212, 160, 23]              # cropland — gold
-  4: [34, 139, 34]               # dense vegetation — green
-  5: [30, 100, 200]              # water — blue
-  6: [210, 180, 140]             # bare soil — tan
+  2: [212, 160, 23]              # cropland — gold
+  3: [34, 139, 34]               # dense vegetation — green
+  4: [30, 100, 200]              # water — blue
+  5: [210, 180, 140]             # bare soil — tan
 
 analytics:
   ndvi_vegetation_threshold: 0.3

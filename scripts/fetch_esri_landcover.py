@@ -55,31 +55,30 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).parent.parent
 PRECOMPUTED_DIR = PROJECT_ROOT / "demo" / "precomputed"
 
-# FarmGuard class color map (7 classes)
+# FarmGuard class color map (6 classes)
 CLASS_COLORS = {
     0: (0, 0, 0),        # background/nodata - black
     1: (220, 38, 38),    # buildings - red
-    2: (130, 90, 44),    # roads - brown
-    3: (212, 160, 23),   # cropland - gold
-    4: (34, 139, 34),    # dense vegetation - green
-    5: (30, 100, 200),   # water - blue
-    6: (210, 180, 140),  # bare soil - tan
+    2: (212, 160, 23),   # cropland - gold
+    3: (34, 139, 34),    # dense vegetation - green
+    4: (30, 100, 200),   # water - blue
+    5: (210, 180, 140),  # bare soil - tan
 }
 
 # ESRI LC class -> FarmGuard class mapping
 ESRI_TO_FARMGUARD = {
     0:  0,  # nodata -> background
-    1:  5,  # water -> water
-    2:  4,  # trees -> dense_vegetation
-    3:  4,  # grass -> dense_vegetation
-    4:  4,  # flooded_veg -> dense_vegetation
-    5:  3,  # crops -> cropland (THE KEY CLASS)
-    6:  6,  # scrub/shrub -> bare_soil
+    1:  4,  # water -> water
+    2:  3,  # trees -> dense_vegetation
+    3:  3,  # grass -> dense_vegetation
+    4:  3,  # flooded_veg -> dense_vegetation
+    5:  2,  # crops -> cropland (THE KEY CLASS)
+    6:  5,  # scrub/shrub -> bare_soil
     7:  1,  # built area -> buildings
-    8:  6,  # bare ground -> bare_soil
+    8:  5,  # bare ground -> bare_soil
     9:  0,  # snow/ice -> background
     10: 0,  # clouds -> background
-    11: 6,  # rangeland -> bare_soil
+    11: 5,  # rangeland -> bare_soil
 }
 
 

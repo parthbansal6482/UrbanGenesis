@@ -16,11 +16,10 @@ ZONE_DIR = PRECOMPUTED_DIR / ZONE
 CLASS_COLORS = {
     0: (0, 0, 0),        # background - black
     1: (220, 38, 38),    # buildings - red
-    2: (130, 90, 44),    # roads - brown
-    3: (212, 160, 23),   # cropland - gold
-    4: (34, 139, 34),    # dense vegetation - green
-    5: (30, 100, 200),   # water - blue
-    6: (210, 180, 140),  # bare soil - tan
+    2: (212, 160, 23),   # cropland - gold
+    3: (34, 139, 34),    # dense vegetation - green
+    4: (30, 100, 200),   # water - blue
+    5: (210, 180, 140),  # bare soil - tan
 }
 
 def rgb_to_mask(rgb_img):
@@ -49,13 +48,8 @@ def compute_spatial_features(mask):
     dist_buildings = distance_transform_edt(1 - buildings)
     features.append(dist_buildings)
     
-    # 2. Distance to roads (class 2)
-    roads = (mask == 2).astype(np.uint8)
-    dist_roads = distance_transform_edt(1 - roads)
-    features.append(dist_roads)
-    
-    # 3. Distance to cropland (class 3) - captures farming boundaries
-    crops = (mask == 3).astype(np.uint8)
+    # 2. Distance to cropland (class 2) - captures farming boundaries
+    crops = (mask == 2).astype(np.uint8)
     dist_crops = distance_transform_edt(1 - crops)
     features.append(dist_crops)
     
@@ -135,7 +129,7 @@ stats = dict(zip(unique, counts))
 print("\nPredicted 2025 Land Cover Distribution:")
 for cls_id, count in stats.items():
     pct = count / forecast_mask.size * 100
-    color_name = {0:"background", 1:"buildings", 2:"roads", 3:"cropland", 4:"vegetation", 5:"water", 6:"bare_soil"}.get(cls_id)
+    color_name = {0:"background", 1:"buildings", 2:"cropland", 3:"vegetation", 4:"water", 5:"bare_soil"}.get(cls_id)
     print(f"  {color_name}: {pct:.2f}%")
 
 # Save predicted image

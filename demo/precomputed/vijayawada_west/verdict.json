@@ -1,12 +1,12 @@
 {
   "zone": "vijayawada_west",
   "latest_year": 2025,
-  "abi": 3.3697,
+  "abi": 3.1919,
   "grade": "A",
   "label": "Healthy Buffer",
   "description": "Cropland well-protected. Strong agricultural buffer intact. No MRV flags.",
-  "overall_abi_change_pct": -10.4,
-  "cropland_loss_ha": 2113.46,
+  "overall_abi_change_pct": -15.2,
+  "cropland_loss_ha": 3114.73,
   "encroachment_alert": false,
   "timeseries": [
     {
@@ -15,7 +15,6 @@
       "vegetation_pixels": 618895,
       "water_pixels": 377181,
       "buildings_pixels": 1085776,
-      "roads_pixels": 0,
       "buffer_pixels": 4085325,
       "encroach_pixels": 1085776,
       "cropland_pct": 52.13,
@@ -24,7 +23,6 @@
       "soil_pixels": 755395,
       "soil_pct": 12.75,
       "buildings_pct": 18.32,
-      "roads_pct": 0.0,
       "vegetation_pct": 10.44,
       "water_pct": 6.36
     },
@@ -34,7 +32,6 @@
       "vegetation_pixels": 450505,
       "water_pixels": 410031,
       "buildings_pixels": 1281888,
-      "roads_pixels": 0,
       "buffer_pixels": 3919004,
       "encroach_pixels": 1281888,
       "cropland_pct": 51.61,
@@ -43,7 +40,6 @@
       "soil_pixels": 725601,
       "soil_pct": 12.24,
       "buildings_pct": 21.63,
-      "roads_pct": 0.0,
       "vegetation_pct": 7.6,
       "water_pct": 6.92
     },
@@ -53,7 +49,6 @@
       "vegetation_pixels": 644211,
       "water_pixels": 490173,
       "buildings_pixels": 1228630,
-      "roads_pixels": 0,
       "buffer_pixels": 4197716,
       "encroach_pixels": 1228630,
       "cropland_pct": 51.69,
@@ -62,7 +57,6 @@
       "soil_pixels": 500150,
       "soil_pct": 8.44,
       "buildings_pct": 20.73,
-      "roads_pct": 0.0,
       "vegetation_pct": 10.87,
       "water_pct": 8.27
     },
@@ -72,7 +66,6 @@
       "vegetation_pixels": 586312,
       "water_pixels": 477018,
       "buildings_pixels": 1298902,
-      "roads_pixels": 0,
       "buffer_pixels": 4076441,
       "encroach_pixels": 1298902,
       "cropland_pct": 50.84,
@@ -81,29 +74,26 @@
       "soil_pixels": 551153,
       "soil_pct": 9.3,
       "buildings_pct": 21.92,
-      "roads_pct": 0.0,
       "vegetation_pct": 9.89,
       "water_pct": 8.05
     },
     {
-      "abi": 3.3697,
-      "cropland_pixels": 2877903,
-      "vegetation_pixels": 579933,
-      "water_pixels": 482738,
-      "buildings_pixels": 1169403,
-      "roads_pixels": 0,
-      "buffer_pixels": 3940574,
-      "encroach_pixels": 1169403,
-      "cropland_pct": 48.56,
-      "encroach_pct": 19.73,
+      "abi": 3.1919,
+      "cropland_pixels": 2777776,
+      "vegetation_pixels": 661220,
+      "water_pixels": 504668,
+      "buildings_pixels": 1235515,
+      "buffer_pixels": 3943664,
+      "encroach_pixels": 1235515,
+      "cropland_pct": 46.87,
+      "encroach_pct": 20.85,
       "year": 2025,
-      "soil_pixels": 816519,
-      "soil_pct": 13.78,
-      "buildings_pct": 19.73,
-      "roads_pct": 0.0,
-      "vegetation_pct": 9.79,
-      "water_pct": 8.15
+      "soil_pixels": 747317,
+      "soil_pct": 12.61,
+      "buildings_pct": 20.85,
+      "vegetation_pct": 11.16,
+      "water_pct": 8.52
     }
   ],
-  "summary": "vijayawada_west \u2014 ABI: 3.37 (-10.4% since 2017). Cropland lost: 2113.5 ha. Grade: A \u2014 Healthy Buffer. No active encroachment alert."
+  "summary": "vijayawada_west \u2014 ABI: 3.19 (-15.2% since 2017). Cropland lost: 3114.7 ha. Grade: A \u2014 Healthy Buffer. No active encroachment alert."
 }

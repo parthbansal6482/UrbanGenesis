@@ -72,11 +72,10 @@ except Exception:
 CLASS_INFO = {
     0: {"name": "Background",       "color": "#000000", "emoji": "⬛"},
     1: {"name": "Buildings",        "color": "#DC2626", "emoji": "🏢"},
-    2: {"name": "Roads",            "color": "#825A2C", "emoji": "🛣️"},
-    3: {"name": "Cropland",         "color": "#D4A017", "emoji": "🌾"},
-    4: {"name": "Dense Vegetation", "color": "#228B22", "emoji": "🌳"},
-    5: {"name": "Water Bodies",     "color": "#1E64C8", "emoji": "💧"},
-    6: {"name": "Bare Soil",        "color": "#D2B48C", "emoji": "🏜️"},
+    2: {"name": "Cropland",         "color": "#D4A017", "emoji": "🌾"},
+    3: {"name": "Dense Vegetation", "color": "#228B22", "emoji": "🌳"},
+    4: {"name": "Water Bodies",     "color": "#1E64C8", "emoji": "💧"},
+    5: {"name": "Bare Soil",        "color": "#D2B48C", "emoji": "🏜️"},
 }
 
 # ─────────────────────────────────────────────────────
@@ -160,11 +159,10 @@ def build_folium_map(zone_name: str, before_year: int, after_year: int) -> str:
         expected_colors = {
             0: (0, 0, 0),        # background/clouds
             1: (220, 38, 38),    # buildings - red
-            2: (130, 90, 44),    # roads - brown
-            3: (212, 160, 23),   # cropland - gold
-            4: (34, 139, 34),    # dense vegetation - green
-            5: (30, 100, 200),   # water - blue
-            6: (210, 180, 140),  # bare soil - tan
+            2: (212, 160, 23),   # cropland - gold
+            3: (34, 139, 34),    # dense vegetation - green
+            4: (30, 100, 200),   # water - blue
+            5: (210, 180, 140),  # bare soil - tan
         }
         
         for cls_id, rgb_col in expected_colors.items():
@@ -378,19 +376,18 @@ def build_donut_chart(timeseries: list, year: int) -> go.Figure:
 
     # Read classes directly from precomputed data
     b_pixels = rec.get("buildings_pixels", 0)
-    r_pixels = rec.get("roads_pixels", 0)
     c_pixels = rec.get("cropland_pixels", 0)
     v_pixels = rec.get("vegetation_pixels", 0)
     w_pixels = rec.get("water_pixels", 0)
     s_pixels = rec.get("soil_pixels", 0)
 
-    labels = ["🏢 Buildings", "🛣️ Roads", "🌾 Cropland", "🌳 Vegetation", "💧 Water Bodies", "🏜️ Bare Soil"]
-    values = [b_pixels, r_pixels, c_pixels, v_pixels, w_pixels, s_pixels]
-    colors = ["#DC2626", "#825A2C", "#D4A017", "#228B22", "#1E64C8", "#D2B48C"]
+    labels = ["🏢 Buildings", "🌾 Cropland", "🌳 Vegetation", "💧 Water Bodies", "🏜️ Bare Soil"]
+    values = [b_pixels, c_pixels, v_pixels, w_pixels, s_pixels]
+    colors = ["#DC2626", "#D4A017", "#228B22", "#1E64C8", "#D2B48C"]
 
     # If all values are 0, put placeholder
     if sum(values) == 0:
-        values = [1, 1, 1, 1, 1, 1]
+        values = [1, 1, 1, 1, 1]
 
     fig = go.Figure(go.Pie(
         labels=labels,
@@ -504,7 +501,6 @@ def analyse_zone(zone_name: str, before_year: int, after_year: int, viz_mode: st
         if rec_before and rec_after:
             classes_to_compare = [
                 ("🏢 Buildings", "buildings_pct"),
-                ("🛣️ Roads", "roads_pct"),
                 ("🌾 Cropland", "cropland_pct"),
                 ("🌳 Vegetation", "vegetation_pct"),
                 ("💧 Water Bodies", "water_pct"),
@@ -596,10 +592,10 @@ def analyse_zone(zone_name: str, before_year: int, after_year: int, viz_mode: st
         import traceback; traceback.print_exc()
 
         mock_timeseries = [
-            {"year": 2018, "abi": 2.20, "buildings_pixels": 2000, "roads_pixels": 800, "cropland_pixels": 4000, "vegetation_pixels": 1800, "water_pixels": 400, "soil_pixels": 1000, "buildings_pct": 20.0, "roads_pct": 8.0, "cropland_pct": 40.0, "vegetation_pct": 18.0, "water_pct": 4.0, "soil_pct": 10.0},
-            {"year": 2020, "abi": 1.45, "buildings_pixels": 3000, "roads_pixels": 1200, "cropland_pixels": 3800, "vegetation_pixels": 1800, "water_pixels": 500, "soil_pixels": 800, "buildings_pct": 30.0, "roads_pct": 12.0, "cropland_pct": 38.0, "vegetation_pct": 18.0, "water_pct": 5.0, "soil_pct": 8.0},
-            {"year": 2022, "abi": 0.88, "buildings_pixels": 4500, "roads_pixels": 1800, "cropland_pixels": 3200, "vegetation_pixels": 1800, "water_pixels": 500, "soil_pixels": 800, "buildings_pct": 45.0, "roads_pct": 18.0, "cropland_pct": 32.0, "vegetation_pct": 18.0, "water_pct": 5.0, "soil_pct": 8.0},
-            {"year": 2024, "abi": 0.42, "buildings_pixels": 5500, "roads_pixels": 2500, "cropland_pixels": 2000, "vegetation_pixels": 1100, "water_pixels": 300, "soil_pixels": 100, "buildings_pct": 55.0, "roads_pct": 25.0, "cropland_pct": 20.0, "vegetation_pct": 11.0, "water_pct": 3.0, "soil_pct": 1.0},
+            {"year": 2018, "abi": 2.20, "buildings_pixels": 2000, "cropland_pixels": 4000, "vegetation_pixels": 1800, "water_pixels": 400, "soil_pixels": 1000, "buildings_pct": 20.0, "cropland_pct": 40.0, "vegetation_pct": 18.0, "water_pct": 4.0, "soil_pct": 10.0},
+            {"year": 2020, "abi": 1.45, "buildings_pixels": 3000, "cropland_pixels": 3800, "vegetation_pixels": 1800, "water_pixels": 500, "soil_pixels": 800, "buildings_pct": 30.0, "cropland_pct": 38.0, "vegetation_pct": 18.0, "water_pct": 5.0, "soil_pct": 8.0},
+            {"year": 2022, "abi": 0.88, "buildings_pixels": 4500, "cropland_pixels": 3200, "vegetation_pixels": 1800, "water_pixels": 500, "soil_pixels": 800, "buildings_pct": 45.0, "cropland_pct": 32.0, "vegetation_pct": 18.0, "water_pct": 5.0, "soil_pct": 8.0},
+            {"year": 2024, "abi": 0.42, "buildings_pixels": 5500, "cropland_pixels": 2000, "vegetation_pixels": 1100, "water_pixels": 300, "soil_pixels": 100, "buildings_pct": 55.0, "cropland_pct": 20.0, "vegetation_pct": 11.0, "water_pct": 3.0, "soil_pct": 1.0},
         ]
         dummy = np.zeros((512, 512, 3), dtype=np.uint8)
         dummy[:256, :] = (34, 139, 34)  # vegetation
@@ -762,7 +758,6 @@ with gr.Blocks(
               <b style="font-size:0.95em; color:#111827;">🌾 AI Land Use Legend</b>
               <div class="legend-grid">
                 <div class="legend-item"><span class="legend-dot" style="background:#DC2626;"></span>🏢 Buildings</div>
-                <div class="legend-item"><span class="legend-dot" style="background:#825A2C;"></span>🛣️ Roads</div>
                 <div class="legend-item"><span class="legend-dot" style="background:#D4A017;"></span>🌾 Cropland</div>
                 <div class="legend-item"><span class="legend-dot" style="background:#228B22;"></span>🌳 Vegetation</div>
                 <div class="legend-item"><span class="legend-dot" style="background:#1E64C8;"></span>💧 Water</div>

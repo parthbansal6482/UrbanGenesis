@@ -34,9 +34,9 @@ from PIL import Image
 from typing import Dict, List
 
 # Classes that form the agricultural/natural buffer
-BUFFER_CLASSES = {3, 4, 5}       # cropland, dense_vegetation, water
-ENCROACH_CLASSES = {1, 2}        # buildings, roads
-CROPLAND_CLASS = 3
+BUFFER_CLASSES = {2, 3, 4}       # cropland, dense_vegetation, water
+ENCROACH_CLASSES = {1}           # buildings (encroachment)
+CROPLAND_CLASS = 2
 
 
 def compute_abi(mask: np.ndarray) -> Dict:
@@ -44,23 +44,22 @@ def compute_abi(mask: np.ndarray) -> Dict:
     Compute ABI and component pixel counts from a segmentation mask.
 
     Args:
-        mask: np.ndarray shape (H, W), integer values 0–6
+        mask: np.ndarray shape (H, W), integer values 0–5
 
     Returns:
         dict with keys: abi, cropland_pixels, vegetation_pixels, water_pixels,
-        buildings_pixels, roads_pixels, buffer_pixels, encroach_pixels,
+        buildings_pixels, buffer_pixels, encroach_pixels,
         cropland_pct, encroach_pct
     """
     total = mask.size
 
     cropland_px = int((mask == CROPLAND_CLASS).sum())
-    vegetation_px = int((mask == 4).sum())
-    water_px = int((mask == 5).sum())
+    vegetation_px = int((mask == 3).sum())
+    water_px = int((mask == 4).sum())
     buildings_px = int((mask == 1).sum())
-    roads_px = int((mask == 2).sum())
 
     buffer_px = cropland_px + vegetation_px + water_px
-    encroach_px = buildings_px + roads_px
+    encroach_px = buildings_px
 
     abi = float(buffer_px) / encroach_px if encroach_px > 0 else float("inf")
 
@@ -70,7 +69,6 @@ def compute_abi(mask: np.ndarray) -> Dict:
         "vegetation_pixels": vegetation_px,
         "water_pixels": water_px,
         "buildings_pixels": buildings_px,
-        "roads_pixels": roads_px,
         "buffer_pixels": buffer_px,
         "encroach_pixels": encroach_px,
         "cropland_pct": round(cropland_px / total * 100, 2),
