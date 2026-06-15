@@ -59,25 +59,25 @@ zones:
   nashik_north:
     name: "Nashik North Agricultural Zone"
     bbox: [73.72, 20.05, 73.98, 20.25]    # Nashik, Maharashtra — grape farms
-    years: [2017, 2019, 2021, 2023]
+    years: [2017, 2019, 2021, 2023, 2025]
     satyukt_relevance: "Grape and onion belt. Sat4Risk flood zone. MRV baseline."
 
   vijayawada_west:
     name: "Vijayawada West Farmland"
     bbox: [80.45, 16.45, 80.70, 16.65]    # Krishna delta — rice/cotton
-    years: [2017, 2019, 2021, 2023]
+    years: [2017, 2019, 2021, 2023, 2025]
     satyukt_relevance: "Krishna delta cropland. Insurance client region."
 
   hubli_outskirts:
     name: "Hubli Peripheral Agricultural Zone"
     bbox: [74.95, 15.28, 75.20, 15.48]    # North Karnataka — cotton/sunflower
-    years: [2017, 2019, 2021, 2023]
+    years: [2017, 2019, 2021, 2023, 2025]
     satyukt_relevance: "Karnataka agri zone. Satyukt active partner region."
 
   bengaluru:
     name: "Bengaluru Agricultural Buffer Zone"
     bbox: [77.45, 12.83, 77.75, 13.10]
-    years: [2017, 2019, 2021, 2023]
+    years: [2017, 2019, 2021, 2023, 2025]
     satyukt_relevance: "Satyukt headquarters regional cropland buffer tracker."
 
 stac:

@@ -1,12 +1,12 @@
 {
   "zone": "hubli_outskirts",
-  "latest_year": 2023,
-  "abi": 3.2123,
+  "latest_year": 2025,
+  "abi": 3.1061,
   "grade": "A",
   "label": "Healthy Buffer",
   "description": "Cropland well-protected. Strong agricultural buffer intact. No MRV flags.",
-  "overall_abi_change_pct": -15.1,
-  "cropland_loss_ha": 975.53,
+  "overall_abi_change_pct": -17.9,
+  "cropland_loss_ha": 3253.3,
   "encroachment_alert": false,
   "timeseries": [
     {
@@ -84,7 +84,26 @@
       "roads_pct": 0.0,
       "vegetation_pct": 4.1,
       "water_pct": 1.26
+    },
+    {
+      "abi": 3.1061,
+      "cropland_pixels": 3590564,
+      "vegetation_pixels": 267858,
+      "water_pixels": 85681,
+      "buildings_pixels": 1269782,
+      "roads_pixels": 0,
+      "buffer_pixels": 3944103,
+      "encroach_pixels": 1269782,
+      "cropland_pct": 60.45,
+      "encroach_pct": 21.38,
+      "year": 2025,
+      "soil_pixels": 725807,
+      "soil_pct": 12.22,
+      "buildings_pct": 21.38,
+      "roads_pct": 0.0,
+      "vegetation_pct": 4.51,
+      "water_pct": 1.44
     }
   ],
-  "summary": "hubli_outskirts \u2014 ABI: 3.21 (-15.1% since 2017). Cropland lost: 975.5 ha. Grade: A \u2014 Healthy Buffer. No active encroachment alert."
+  "summary": "hubli_outskirts \u2014 ABI: 3.11 (-17.9% since 2017). Cropland lost: 3253.3 ha. Grade: A \u2014 Healthy Buffer. No active encroachment alert."
 }

@@ -1,12 +1,12 @@
 {
   "zone": "nashik_north",
-  "latest_year": 2023,
-  "abi": 7.1786,
+  "latest_year": 2025,
+  "abi": 7.5289,
   "grade": "A",
   "label": "Healthy Buffer",
   "description": "Cropland well-protected. Strong agricultural buffer intact. No MRV flags.",
-  "overall_abi_change_pct": -45.5,
-  "cropland_loss_ha": 3945.68,
+  "overall_abi_change_pct": -42.8,
+  "cropland_loss_ha": 633.44,
   "encroachment_alert": true,
   "timeseries": [
     {
@@ -84,7 +84,26 @@
       "roads_pct": 0.0,
       "vegetation_pct": 0.21,
       "water_pct": 1.69
+    },
+    {
+      "abi": 7.5289,
+      "cropland_pixels": 5046299,
+      "vegetation_pixels": 0,
+      "water_pixels": 100506,
+      "buildings_pixels": 683608,
+      "roads_pixels": 0,
+      "buffer_pixels": 5146805,
+      "encroach_pixels": 683608,
+      "cropland_pct": 82.73,
+      "encroach_pct": 11.21,
+      "year": 2025,
+      "soil_pixels": 269643,
+      "soil_pct": 4.42,
+      "buildings_pct": 11.21,
+      "roads_pct": 0.0,
+      "vegetation_pct": 0.0,
+      "water_pct": 1.65
     }
   ],
-  "summary": "nashik_north \u2014 ABI: 7.18 (-45.5% since 2017). Cropland lost: 3945.7 ha. Grade: A \u2014 Healthy Buffer. \u26a0\ufe0f Encroachment Alert Active."
+  "summary": "nashik_north \u2014 ABI: 7.53 (-42.8% since 2017). Cropland lost: 633.4 ha. Grade: A \u2014 Healthy Buffer. \u26a0\ufe0f Encroachment Alert Active."
 }
