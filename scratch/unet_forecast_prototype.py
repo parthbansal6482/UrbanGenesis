@@ -1,9 +1,10 @@
 """
 scratch/unet_forecast_prototype.py
 
-Implements a lightweight PyTorch U-Net for spatial land-cover forecasting.
-Loops over all agricultural zones, trains a convolutional neural network (CNN) on CPU,
-forecasts 2025, and updates the dashboard assets.
+Implements an optimized PyTorch U-Net for spatial land-cover forecasting.
+Trains a single global convolutional neural network (CNN) on multi-spectral features,
+evaluates validation accuracy on 2023, forecasts 2025, and updates the dashboard assets.
+Adjusts execution settings dynamically for Mac (CPU thermal control) and Colab (T4 GPU performance).
 """
 
 import torch
@@ -23,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from analytics.abi import compute_abi, compute_cropland_loss_ha
 from analytics.grader import generate_verdict
 
-# Detect device & optimize CPU threads if running on CPU (e.g. to prevent Mac overheating)
+# Detect device & optimize CPU threads if running on CPU (to prevent Mac overheating)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if device.type == "cpu":
     torch.set_num_threads(2)
@@ -38,15 +39,16 @@ PRECOMPUTED_DIR = PROJECT_ROOT / "demo" / "precomputed"
 CONFIG_PATH = PROJECT_ROOT / "config" / "settings.yaml"
 
 CLASS_COLORS = {
-    0: (0, 0, 0),
-    1: (220, 38, 38),
-    2: (212, 160, 23),
-    3: (34, 139, 34),
-    4: (30, 100, 200),
-    5: (210, 180, 140),
+    0: (0, 0, 0),        # background - black
+    1: (220, 38, 38),    # buildings - red
+    2: (212, 160, 23),   # cropland - gold
+    3: (34, 139, 34),    # dense vegetation - green
+    4: (30, 100, 200),   # water - blue
+    5: (210, 180, 140),  # bare soil - tan
 }
 
 def rgb_to_mask(rgb_img):
+    """Convert RGB mask back to integer class index mask."""
     h, w = rgb_img.shape[:2]
     mask = np.zeros((h, w), dtype=np.uint8)
     for cls_id, color in CLASS_COLORS.items():
@@ -55,6 +57,7 @@ def rgb_to_mask(rgb_img):
     return mask
 
 def mask_to_rgb(mask):
+    """Convert integer class mask to RGB image for visualization."""
     h, w = mask.shape
     rgb = np.zeros((h, w, 3), dtype=np.uint8)
     for cls_id, color in CLASS_COLORS.items():
@@ -62,7 +65,7 @@ def mask_to_rgb(mask):
     return rgb
 
 # ─────────────────────────────────────────────────────
-# 1. U-Net Architecture (Lightweight)
+# 1. U-Net Architecture (Standard 4-Level Deep)
 # ─────────────────────────────────────────────────────
 
 class DoubleConv(nn.Module):
@@ -79,124 +82,221 @@ class DoubleConv(nn.Module):
     def forward(self, x):
         return self.conv(x)
 
-class MiniUNet(nn.Module):
+class UNet(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
-        self.inc = DoubleConv(in_channels, 32)
-        self.down1 = nn.Sequential(nn.MaxPool2d(2), DoubleConv(32, 64))
-        self.down2 = nn.Sequential(nn.MaxPool2d(2), DoubleConv(64, 128))
+        self.inc = DoubleConv(in_channels, 64)
+        self.down1 = nn.Sequential(nn.MaxPool2d(2), DoubleConv(64, 128))
+        self.down2 = nn.Sequential(nn.MaxPool2d(2), DoubleConv(128, 256))
+        self.down3 = nn.Sequential(nn.MaxPool2d(2), DoubleConv(256, 512))
         
-        self.up1 = nn.ConvTranspose2d(128, 64, 2, stride=2)
-        self.conv1 = DoubleConv(128, 64)
-        self.up2 = nn.ConvTranspose2d(64, 32, 2, stride=2)
-        self.conv2 = DoubleConv(64, 32)
+        self.up1 = nn.ConvTranspose2d(512, 256, 2, stride=2)
+        self.conv1 = DoubleConv(512, 256)
+        self.up2 = nn.ConvTranspose2d(256, 128, 2, stride=2)
+        self.conv2 = DoubleConv(256, 128)
+        self.up3 = nn.ConvTranspose2d(128, 64, 2, stride=2)
+        self.conv3 = DoubleConv(128, 64)
         
-        self.outc = nn.Conv2d(32, out_channels, 1)
+        self.outc = nn.Conv2d(64, out_channels, 1)
 
     def forward(self, x):
         x1 = self.inc(x)
         x2 = self.down1(x1)
         x3 = self.down2(x2)
+        x4 = self.down3(x3)
         
-        up1 = self.up1(x3)
-        x_up1 = torch.cat([up1, x2], dim=1)
+        up1 = self.up1(x4)
+        x_up1 = torch.cat([up1, x3], dim=1)
         conv1 = self.conv1(x_up1)
         
         up2 = self.up2(conv1)
-        x_up2 = torch.cat([up2, x1], dim=1)
+        x_up2 = torch.cat([up2, x2], dim=1)
         conv2 = self.conv2(x_up2)
         
-        return self.outc(conv2)
+        up3 = self.up3(conv2)
+        x_up3 = torch.cat([up3, x1], dim=1)
+        conv3 = self.conv3(x_up3)
+        
+        return self.outc(conv3)
 
 # ─────────────────────────────────────────────────────
-# 2. PyTorch Dataset & Chunker
+# 2. PyTorch Global Dataset
 # ─────────────────────────────────────────────────────
 
-class PatchDataset(Dataset):
-    def __init__(self, mask_prev2, mask_prev, mask_target=None, patch_size=128):
+class GlobalPatchDataset(Dataset):
+    def __init__(self, zone_keys, year_prev2, year_prev, year_target=None, patch_size=128, augment=False):
         self.patch_size = patch_size
-        h, w = mask_prev.shape
-        self.h_patches = h // patch_size
-        self.w_patches = w // patch_size
+        self.augment = augment
+        self.patches = []
         
-        h_crop = self.h_patches * patch_size
-        w_crop = self.w_patches * patch_size
-        
-        self.mask_prev2 = mask_prev2[:h_crop, :w_crop]
-        self.mask_prev = mask_prev[:h_crop, :w_crop]
-        self.mask_target = mask_target[:h_crop, :w_crop] if mask_target is not None else None
+        for zone_key in zone_keys:
+            zone_dir = PRECOMPUTED_DIR / zone_key
+            if not zone_dir.exists():
+                continue
+                
+            # Load masks
+            mask_prev2_rgb = np.array(Image.open(zone_dir / f"mask_rgb_{year_prev2}.png"))
+            mask_prev2 = rgb_to_mask(mask_prev2_rgb)
+            
+            mask_prev_rgb = np.array(Image.open(zone_dir / f"mask_rgb_{year_prev}.png"))
+            mask_prev = rgb_to_mask(mask_prev_rgb)
+            
+            mask_target = None
+            if year_target is not None:
+                mask_target_rgb = np.array(Image.open(zone_dir / f"mask_rgb_{year_target}.png"))
+                mask_target = rgb_to_mask(mask_target_rgb)
+                
+            h, w = mask_prev.shape
+            self.h_patches = h // patch_size
+            self.w_patches = w // patch_size
+            
+            # Load spectral features (NDVI + RGB) for year_prev
+            ndvi_img = Image.open(zone_dir / f"ndvi_map_{year_prev}.png").convert("L")
+            if ndvi_img.size != (w, h):
+                ndvi_img = ndvi_img.resize((w, h), Image.Resampling.BILINEAR)
+            ndvi_arr = np.array(ndvi_img, dtype=np.float32) / 255.0
+            
+            tc_img = Image.open(zone_dir / f"true_color_{year_prev}.png").convert("RGB")
+            if tc_img.size != (w, h):
+                tc_img = tc_img.resize((w, h), Image.Resampling.BILINEAR)
+            tc_arr = np.array(tc_img, dtype=np.float32) / 255.0
+            
+            for py in range(self.h_patches):
+                for px in range(self.w_patches):
+                    y = py * patch_size
+                    x = px * patch_size
+                    
+                    p_mask_prev2 = mask_prev2[y:y+patch_size, x:x+patch_size]
+                    p_mask_prev = mask_prev[y:y+patch_size, x:x+patch_size]
+                    p_ndvi = ndvi_arr[y:y+patch_size, x:x+patch_size]
+                    p_tc = tc_arr[y:y+patch_size, x:x+patch_size]
+                    
+                    p_target = None
+                    if mask_target is not None:
+                        p_target = mask_target[y:y+patch_size, x:x+patch_size]
+                        
+                    self.patches.append({
+                        "prev2": p_mask_prev2,
+                        "prev": p_mask_prev,
+                        "ndvi": p_ndvi,
+                        "tc": p_tc,
+                        "target": p_target
+                    })
 
     def __len__(self):
-        return self.h_patches * self.w_patches
+        return len(self.patches)
 
     def __getitem__(self, idx):
-        py = idx // self.w_patches
-        px = idx % self.w_patches
-        y = py * self.patch_size
-        x = px * self.patch_size
+        patch = self.patches[idx]
         
-        patch_prev2 = self.mask_prev2[y:y+self.patch_size, x:x+self.patch_size]
-        patch_prev  = self.mask_prev[y:y+self.patch_size, x:x+self.patch_size]
+        p_prev2 = patch["prev2"]
+        p_prev = patch["prev"]
+        p_ndvi = patch["ndvi"]
+        p_tc = patch["tc"]
+        p_target = patch["target"]
         
-        prev2_oh = np.eye(6)[patch_prev2].transpose(2, 0, 1).astype(np.float32)
-        prev_oh  = np.eye(6)[patch_prev].transpose(2, 0, 1).astype(np.float32)
-        X = np.concatenate([prev2_oh, prev_oh], axis=0)
+        # Augmentations (flips)
+        if self.augment:
+            if np.random.rand() > 0.5:
+                p_prev2 = np.fliplr(p_prev2)
+                p_prev = np.fliplr(p_prev)
+                p_ndvi = np.fliplr(p_ndvi)
+                p_tc = np.fliplr(p_tc)
+                if p_target is not None:
+                    p_target = np.fliplr(p_target)
+            if np.random.rand() > 0.5:
+                p_prev2 = np.flipud(p_prev2)
+                p_prev = np.flipud(p_prev)
+                p_ndvi = np.flipud(p_ndvi)
+                p_tc = np.flipud(p_tc)
+                if p_target is not None:
+                    p_target = np.flipud(p_target)
+                    
+        # One-hot representations
+        prev2_oh = np.eye(6)[p_prev2].transpose(2, 0, 1).astype(np.float32)
+        prev_oh  = np.eye(6)[p_prev].transpose(2, 0, 1).astype(np.float32)
+        ndvi_feat = p_ndvi[np.newaxis, :, :] # 1 x H x W
+        rgb_feat = p_tc.transpose(2, 0, 1)   # 3 x H x W
         
-        if self.mask_target is not None:
-            patch_target = self.mask_target[y:y+self.patch_size, x:x+self.patch_size]
-            return torch.tensor(X), torch.tensor(patch_target, dtype=torch.long)
-        return torch.tensor(X)
+        X = np.concatenate([prev2_oh, prev_oh, ndvi_feat, rgb_feat], axis=0) # 16 channels
+        
+        if p_target is not None:
+            return torch.tensor(X.copy()), torch.tensor(p_target.copy(), dtype=torch.long)
+        return torch.tensor(X.copy())
+
+def compute_class_weights(dataset):
+    """Calculate inverse frequency weights for class imbalance."""
+    counts = np.zeros(6, dtype=np.int64)
+    for p in dataset.patches:
+        if p["target"] is not None:
+            counts += np.bincount(p["target"].flatten(), minlength=6)
+    total = counts.sum()
+    if total == 0:
+        return torch.ones(6, dtype=torch.float32)
+    weights = total / (len(counts) * (counts + 1e-5))
+    weights = weights / weights.sum() * 6.0
+    return torch.tensor(weights, dtype=torch.float32)
 
 # ─────────────────────────────────────────────────────
-# 3. Forecast Zone Function
+# 3. Main Global Orchestration
 # ─────────────────────────────────────────────────────
 
-def forecast_zone(zone_key, zone_cfg):
-    zone_dir = PRECOMPUTED_DIR / zone_key
-    if not zone_dir.exists():
-        logger.warning(f"Zone {zone_key} directory not found. Skipping.")
-        return
-
-    logger.info(f"\n==================================================")
-    logger.info(f"U-Net Spatial Growth Forecasting for: {zone_key}")
-
-    # Load masks
-    masks = {}
-    for yr in [2017, 2019, 2021, 2023]:
-        img = np.array(Image.open(zone_dir / f"mask_rgb_{yr}.png"))
-        masks[yr] = rgb_to_mask(img)
-
-    h, w = masks[2017].shape
-
-    # Dynamic performance tuning parameters for GPU vs CPU
-    batch_size = 32 if device.type == "cuda" else 4
-    num_workers = 2 if device.type == "cuda" else 0
-    pin_memory = True if device.type == "cuda" else False
-
-    # Prepare Training DataLoader (2017 + 2019 -> 2021)
-    train_dataset = PatchDataset(masks[2017], masks[2019], masks[2021], patch_size=128)
+if __name__ == "__main__":
+    with open(CONFIG_PATH) as f:
+        cfg = yaml.safe_load(f)
+    
+    zones = cfg.get("zones", {})
+    zone_keys = sorted(list(zones.keys()))
+    
+    logger.info("Initializing global model dataset...")
+    # Load consolidated data from all zones (2017 & 2019 -> 2021 target)
+    train_dataset = GlobalPatchDataset(zone_keys, 2017, 2019, 2021, patch_size=128, augment=True)
+    
+    # Platform-specific optimization adjustments
+    if device.type == "cuda":
+        batch_size = 128
+        num_workers = 4
+        pin_memory = True
+        epochs = 20
+        use_amp = True
+        logger.info("ENVIRONMENT: Google Colab T4 GPU detected.")
+        logger.info("PROFILING: Maximum hardware settings active (batch=128, workers=4, AMP mixed-precision=ON)")
+    else:
+        batch_size = 8
+        num_workers = 0
+        pin_memory = False
+        epochs = 3
+        use_amp = False
+        logger.info("ENVIRONMENT: Local macOS CPU detected.")
+        logger.info("PROFILING: Thermal-aware settings active (batch=8, workers=0, restricted threads)")
+        
     train_loader = DataLoader(
-        train_dataset, 
-        batch_size=batch_size, 
-        shuffle=True, 
-        num_workers=num_workers, 
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
         pin_memory=pin_memory
     )
-
-    # Build and train U-Net
-    model = MiniUNet(in_channels=12, out_channels=6).to(device)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.005)
-    scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda"))
-
+    
+    # Compute inverse frequency weights
+    class_weights = compute_class_weights(train_dataset).to(device)
+    logger.info(f"Class-imbalance weights: {class_weights.cpu().numpy()}")
+    
+    # Build U-Net model with 16 input channels (one-hot mask transitions + RGB + NDVI)
+    model = UNet(in_channels=16, out_channels=6).to(device)
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    optimizer = optim.Adam(model.parameters(), lr=0.003)
+    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    
+    # Train Loop
+    logger.info(f"\nTraining Global U-Net model for {epochs} epochs...")
     model.train()
-    epochs = 10 if device.type == "cuda" else 3
     for epoch in range(epochs):
         epoch_loss = 0.0
         for X_batch, y_batch in train_loader:
             X_batch, y_batch = X_batch.to(device), y_batch.to(device)
             optimizer.zero_grad()
-            with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
+            with torch.cuda.amp.autocast(enabled=use_amp):
                 outputs = model(X_batch)
                 loss = criterion(outputs, y_batch)
             scaler.scale(loss).backward()
@@ -204,14 +304,15 @@ def forecast_zone(zone_key, zone_cfg):
             scaler.update()
             epoch_loss += loss.item() * X_batch.size(0)
         logger.info(f"  Epoch {epoch+1}/{epochs} | Loss: {epoch_loss/len(train_dataset):.4f}")
-
-    # Validate on 2023
-    val_dataset = PatchDataset(masks[2019], masks[2021], masks[2023], patch_size=128)
+        
+    # Validation step on all zones (2019 & 2021 -> 2023 target)
+    logger.info("\nEvaluating Global U-Net on 2023 Validation targets...")
+    val_dataset = GlobalPatchDataset(zone_keys, 2019, 2021, 2023, patch_size=128, augment=False)
     val_loader = DataLoader(
-        val_dataset, 
-        batch_size=batch_size, 
-        shuffle=False, 
-        num_workers=num_workers, 
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
         pin_memory=pin_memory
     )
     
@@ -221,107 +322,112 @@ def forecast_zone(zone_key, zone_cfg):
     with torch.no_grad():
         for X_batch, y_batch in val_loader:
             X_batch, y_batch = X_batch.to(device), y_batch.to(device)
-            with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
+            with torch.cuda.amp.autocast(enabled=use_amp):
                 outputs = model(X_batch)
                 preds = torch.argmax(outputs, dim=1)
             correct += (preds == y_batch).sum().item()
             total += y_batch.numel()
-    
     acc = correct / total * 100
-    logger.info(f"  U-Net 2023 Validation Pixel Accuracy: {acc:.2f}%")
-
-    # Forecast 2025
-    forecast_dataset = PatchDataset(masks[2021], masks[2023], patch_size=128)
-    forecast_loader = DataLoader(
-        forecast_dataset, 
-        batch_size=batch_size, 
-        shuffle=False, 
-        num_workers=num_workers, 
-        pin_memory=pin_memory
-    )
+    logger.info(f"Global U-Net 2023 Validation Pixel Accuracy: {acc:.2f}%")
     
-    h_crop = forecast_dataset.h_patches * 128
-    w_crop = forecast_dataset.w_patches * 128
-    forecast_mask = np.zeros((h_crop, w_crop), dtype=np.uint8)
-
-    patch_idx = 0
-    with torch.no_grad():
-        for X_batch in forecast_loader:
-            X_batch = X_batch.to(device)
-            with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
-                outputs = model(X_batch)
-                preds = torch.argmax(outputs, dim=1).cpu().numpy()
+    # Forecast 2025 masks for all zones
+    for zone_key in zone_keys:
+        logger.info(f"\n==================================================")
+        logger.info(f"U-Net Spatial Growth Forecasting for: {zone_key}")
+        zone_dir = PRECOMPUTED_DIR / zone_key
+        
+        # Load masks
+        masks = {}
+        for yr in [2017, 2019, 2021, 2023]:
+            img = np.array(Image.open(zone_dir / f"mask_rgb_{yr}.png"))
+            masks[yr] = rgb_to_mask(img)
             
-            for b in range(preds.shape[0]):
-                py = patch_idx // forecast_dataset.w_patches
-                px = patch_idx % forecast_dataset.w_patches
-                y = py * 128
-                x = px * 128
-                forecast_mask[y:y+128, x:x+128] = preds[b]
-                patch_idx += 1
-
-    # Pad back to original dimensions
-    full_forecast_mask = np.zeros((h, w), dtype=np.uint8)
-    full_forecast_mask[:h_crop, :w_crop] = forecast_mask
-    if h > h_crop:
-        full_forecast_mask[h_crop:, :] = 5
-    if w > w_crop:
-        full_forecast_mask[:, w_crop:] = 5
-
-    # Save mask_rgb_2025.png
-    forecast_rgb = mask_to_rgb(full_forecast_mask)
-    output_path = zone_dir / "mask_rgb_2025.png"
-    Image.fromarray(forecast_rgb).save(output_path)
-    logger.info(f"  Saved predicted mask: {output_path.name}")
-
-    # Calculate 2025 stats
-    stats = compute_abi(full_forecast_mask)
-    stats["year"] = 2025
-    stats["soil_pixels"] = int((full_forecast_mask == 5).sum())
-    stats["soil_pct"] = round(stats["soil_pixels"] / full_forecast_mask.size * 100, 2)
-    stats["buildings_pct"] = round(stats["buildings_pixels"] / full_forecast_mask.size * 100, 2)
-    stats["vegetation_pct"] = round(stats["vegetation_pixels"] / full_forecast_mask.size * 100, 2)
-    stats["water_pct"] = round(stats["water_pixels"] / full_forecast_mask.size * 100, 2)
-    stats["cropland_pct"] = round(stats["cropland_pixels"] / full_forecast_mask.size * 100, 2)
-
-    # Rebuild entire timeseries from scratch to remove road class and update indices
-    new_timeseries = []
-    for yr in [2017, 2019, 2021, 2023]:
-        yr_mask = masks[yr]
-        yr_stats = compute_abi(yr_mask)
-        yr_stats["year"] = yr
-        yr_stats["soil_pixels"] = int((yr_mask == 5).sum())
-        yr_stats["soil_pct"] = round(yr_stats["soil_pixels"] / yr_mask.size * 100, 2)
-        yr_stats["buildings_pct"] = round(yr_stats["buildings_pixels"] / yr_mask.size * 100, 2)
-        yr_stats["vegetation_pct"] = round(yr_stats["vegetation_pixels"] / yr_mask.size * 100, 2)
-        yr_stats["water_pct"] = round(yr_stats["water_pixels"] / yr_mask.size * 100, 2)
-        yr_stats["cropland_pct"] = round(yr_stats["cropland_pixels"] / yr_mask.size * 100, 2)
-        new_timeseries.append(yr_stats)
-
-    # Append 2025 stats
-    stats["year"] = 2025
-    new_timeseries.append(stats)
-    new_timeseries = sorted(new_timeseries, key=lambda x: x["year"])
-
-    loss_ha = compute_cropland_loss_ha(masks[2017], full_forecast_mask, resolution_m=10.0)
-    new_verdict = generate_verdict(new_timeseries, zone_key, cropland_loss_ha=loss_ha)
-    
-    verdict_path = zone_dir / "verdict.json"
-    with open(verdict_path, "w") as f:
-        json.dump(new_verdict, f, indent=2)
-    
-    logger.info(f"  2025 U-Net Verdict: Grade {new_verdict['grade']} (ABI={new_verdict['abi']:.3f}, Crop Loss={loss_ha:.1f} ha)")
-    
-    # Force garbage collection to free CPU memory
-    del model, train_loader, val_loader, forecast_loader
-    gc.collect()
-
-if __name__ == "__main__":
-    with open(CONFIG_PATH) as f:
-        cfg = yaml.safe_load(f)
-    
-    zones = cfg.get("zones", {})
-    for zone_key, zone_cfg in sorted(zones.items()):
-        forecast_zone(zone_key, zone_cfg)
-    
+        h, w = masks[2017].shape
+        
+        # Sliced patch dataset for single zone forecasting (2021 & 2023 -> 2025)
+        forecast_dataset = GlobalPatchDataset([zone_key], 2021, 2023, None, patch_size=128, augment=False)
+        forecast_loader = DataLoader(
+            forecast_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=pin_memory
+        )
+        
+        h_crop = forecast_dataset.h_patches * 128
+        w_crop = forecast_dataset.w_patches * 128
+        forecast_mask = np.zeros((h_crop, w_crop), dtype=np.uint8)
+        
+        patch_idx = 0
+        with torch.no_grad():
+            for X_batch in forecast_loader:
+                X_batch = X_batch.to(device)
+                with torch.cuda.amp.autocast(enabled=use_amp):
+                    outputs = model(X_batch)
+                    preds = torch.argmax(outputs, dim=1).cpu().numpy()
+                for b in range(preds.shape[0]):
+                    py = patch_idx // forecast_dataset.w_patches
+                    px = patch_idx % forecast_dataset.w_patches
+                    y = py * 128
+                    x = px * 128
+                    forecast_mask[y:y+128, x:x+128] = preds[b]
+                    patch_idx += 1
+                    
+        # Pad back to original dimensions
+        full_forecast_mask = np.zeros((h, w), dtype=np.uint8)
+        full_forecast_mask[:h_crop, :w_crop] = forecast_mask
+        if h > h_crop:
+            full_forecast_mask[h_crop:, :] = 5
+        if w > w_crop:
+            full_forecast_mask[:, w_crop:] = 5
+            
+        # Save mask_rgb_2025.png
+        forecast_rgb = mask_to_rgb(full_forecast_mask)
+        output_path = zone_dir / "mask_rgb_2025.png"
+        Image.fromarray(forecast_rgb).save(output_path)
+        logger.info(f"  Saved predicted mask: {output_path.name}")
+        
+        # Calculate 2025 stats
+        stats = compute_abi(full_forecast_mask)
+        stats["year"] = 2025
+        stats["soil_pixels"] = int((full_forecast_mask == 5).sum())
+        stats["soil_pct"] = round(stats["soil_pixels"] / full_forecast_mask.size * 100, 2)
+        stats["buildings_pct"] = round(stats["buildings_pixels"] / full_forecast_mask.size * 100, 2)
+        stats["vegetation_pct"] = round(stats["vegetation_pixels"] / full_forecast_mask.size * 100, 2)
+        stats["water_pct"] = round(stats["water_pixels"] / full_forecast_mask.size * 100, 2)
+        stats["cropland_pct"] = round(stats["cropland_pixels"] / full_forecast_mask.size * 100, 2)
+        
+        # Rebuild timeseries
+        new_timeseries = []
+        for yr in [2017, 2019, 2021, 2023]:
+            yr_mask = masks[yr]
+            yr_stats = compute_abi(yr_mask)
+            yr_stats["year"] = yr
+            yr_stats["soil_pixels"] = int((yr_mask == 5).sum())
+            yr_stats["soil_pct"] = round(yr_stats["soil_pixels"] / yr_mask.size * 100, 2)
+            yr_stats["buildings_pct"] = round(yr_stats["buildings_pixels"] / yr_mask.size * 100, 2)
+            yr_stats["vegetation_pct"] = round(yr_stats["vegetation_pixels"] / yr_mask.size * 100, 2)
+            yr_stats["water_pct"] = round(yr_stats["water_pixels"] / yr_mask.size * 100, 2)
+            yr_stats["cropland_pct"] = round(yr_stats["cropland_pixels"] / yr_mask.size * 100, 2)
+            new_timeseries.append(yr_stats)
+            
+        new_timeseries.append(stats)
+        new_timeseries = sorted(new_timeseries, key=lambda x: x["year"])
+        
+        # Cropland loss
+        loss_ha = compute_cropland_loss_ha(masks[2017], full_forecast_mask, resolution_m=10.0)
+        
+        # Grader verdict
+        new_verdict = generate_verdict(new_timeseries, zone_key, cropland_loss_ha=loss_ha)
+        
+        verdict_path = zone_dir / "verdict.json"
+        with open(verdict_path, "w") as f:
+            json.dump(new_verdict, f, indent=2)
+            
+        logger.info(f"  2025 U-Net Verdict: Grade {new_verdict['grade']} (ABI={new_verdict['abi']:.3f}, Crop Loss={loss_ha:.1f} ha)")
+        
     logger.info("\nAll zones successfully forecasted using U-Net.")
+    
+    # Free memory
+    del model, train_loader, val_loader
+    gc.collect()

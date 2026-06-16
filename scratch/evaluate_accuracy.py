@@ -17,12 +17,12 @@ PRECOMPUTED_DIR = PROJECT_ROOT / "demo" / "precomputed"
 CONFIG_PATH = PROJECT_ROOT / "config" / "settings.yaml"
 
 CLASS_COLORS = {
-    0: (0, 0, 0),
-    1: (220, 38, 38),
-    2: (212, 160, 23),
-    3: (34, 139, 34),
-    4: (30, 100, 200),
-    5: (210, 180, 140),
+    0: (0, 0, 0),        # background
+    1: (220, 38, 38),    # buildings
+    2: (212, 160, 23),   # cropland (gold)
+    3: (34, 139, 34),    # dense vegetation (green)
+    4: (30, 100, 200),   # water (blue)
+    5: (210, 180, 140),  # bare soil (tan)
 }
 
 def rgb_to_mask(rgb_img):
@@ -34,15 +34,44 @@ def rgb_to_mask(rgb_img):
     return mask
 
 def compute_spatial_features(mask):
+    """Generate distance features to all canonical classes."""
     features = []
-    buildings = (mask == 1).astype(np.uint8)
-    dist_buildings = distance_transform_edt(1 - buildings)
-    features.append(dist_buildings)
-    
-    crops = (mask == 2).astype(np.uint8)
-    dist_crops = distance_transform_edt(1 - crops)
-    features.append(dist_crops)
+    for cls_id in [1, 2, 3, 4, 5]:
+        cls_mask = (mask == cls_id).astype(np.uint8)
+        dist = distance_transform_edt(1 - cls_mask)
+        features.append(dist)
     return features
+
+def load_spectral_features(zone_dir, year, target_h, target_w):
+    """Load and scale NDVI and True Color features, resizing if needed."""
+    target_size = (target_w, target_h)
+    
+    # 1. Load NDVI
+    ndvi_path = zone_dir / f"ndvi_map_{year}.png"
+    if ndvi_path.exists():
+        img = Image.open(ndvi_path).convert("L")
+        if img.size != target_size:
+            img = img.resize(target_size, Image.Resampling.BILINEAR)
+        ndvi_arr = np.array(img, dtype=np.float32).flatten() / 255.0
+    else:
+        ndvi_arr = np.zeros(target_h * target_w, dtype=np.float32)
+        
+    # 2. Load True Color (RGB)
+    tc_path = zone_dir / f"true_color_{year}.png"
+    if tc_path.exists():
+        img = Image.open(tc_path).convert("RGB")
+        if img.size != target_size:
+            img = img.resize(target_size, Image.Resampling.BILINEAR)
+        tc_arr = np.array(img, dtype=np.float32) / 255.0
+        r = tc_arr[:, :, 0].flatten()
+        g = tc_arr[:, :, 1].flatten()
+        b = tc_arr[:, :, 2].flatten()
+    else:
+        r = np.zeros(target_h * target_w, dtype=np.float32)
+        g = np.zeros(target_h * target_w, dtype=np.float32)
+        b = np.zeros(target_h * target_w, dtype=np.float32)
+        
+    return ndvi_arr, r, g, b
 
 def evaluate_zone(zone_key):
     zone_dir = PRECOMPUTED_DIR / zone_key
@@ -55,13 +84,20 @@ def evaluate_zone(zone_key):
         img = np.array(Image.open(zone_dir / f"mask_rgb_{yr}.png"))
         masks[yr] = rgb_to_mask(img)
 
+    h, w = masks[2017].shape
+
+    # Load spectral features
+    ndvi_2019, r_2019, g_2019, b_2019 = load_spectral_features(zone_dir, 2019, h, w)
+    ndvi_2021, r_2021, g_2021, b_2021 = load_spectral_features(zone_dir, 2021, h, w)
+
     # 1. Train on 2017 + 2019 -> 2021
     f_2017 = masks[2017].flatten()
     f_2019 = masks[2019].flatten()
     spatial_2019 = compute_spatial_features(masks[2019])
     flat_spatial_2019 = [s.flatten() for s in spatial_2019]
     
-    X_train = np.column_stack([f_2017, f_2019] + flat_spatial_2019)
+    # Combine baseline mask features, multi-class distance features, and spectral features
+    X_train = np.column_stack([f_2017, f_2019] + flat_spatial_2019 + [ndvi_2019, r_2019, g_2019, b_2019])
     y_train = masks[2021].flatten()
 
     # Sample
@@ -70,8 +106,8 @@ def evaluate_zone(zone_key):
     X_train_sampled = X_train[sample_indices]
     y_train_sampled = y_train[sample_indices]
 
-    # Fit RF
-    clf = RandomForestClassifier(n_estimators=50, max_depth=15, random_state=42, n_jobs=-1)
+    # Fit Random Forest with class balancing
+    clf = RandomForestClassifier(n_estimators=50, max_depth=15, random_state=42, n_jobs=-1, class_weight="balanced")
     clf.fit(X_train_sampled, y_train_sampled)
 
     # 2. Evaluate on 2019 + 2021 -> 2023
@@ -80,7 +116,7 @@ def evaluate_zone(zone_key):
     spatial_2021 = compute_spatial_features(masks[2021])
     flat_spatial_2021 = [s.flatten() for s in spatial_2021]
     
-    X_val = np.column_stack([f_2019_val, f_2021_val] + flat_spatial_2021)
+    X_val = np.column_stack([f_2019_val, f_2021_val] + flat_spatial_2021 + [ndvi_2021, r_2021, g_2021, b_2021])
     y_val = masks[2023].flatten()
 
     y_pred = clf.predict(X_val)
@@ -89,8 +125,8 @@ def evaluate_zone(zone_key):
     # Class-specific report
     report = classification_report(
         y_val, y_pred,
-        labels=[0, 1, 2, 3, 4, 5, 6],
-        target_names=["background", "buildings", "roads", "cropland", "vegetation", "water", "bare_soil"],
+        labels=[0, 1, 2, 3, 4, 5],
+        target_names=["background", "buildings", "cropland", "vegetation", "water", "bare_soil"],
         output_dict=True,
         zero_division=0
     )
@@ -110,7 +146,7 @@ if __name__ == "__main__":
             acc, report = evaluate_zone(zone_key)
             print(f"  Overall Pixel Accuracy: {acc*100:.2f}%")
             print("  Key Classes:")
-            for cls in ["buildings", "cropland", "roads", "vegetation"]:
+            for cls in ["buildings", "cropland", "vegetation", "bare_soil"]:
                 metrics = report[cls]
                 print(f"    - {cls.capitalize():<11}: Precision={metrics['precision']:.2f}, Recall={metrics['recall']:.2f}, F1={metrics['f1-score']:.2f}")
             print("-" * 50)

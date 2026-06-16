@@ -1,7 +1,7 @@
 """
 scripts/forecast_2025.py
 
-Loads historical precomputed land use masks, trains a Random Forest spatial growth model,
+Loads historical precomputed land use masks, trains an optimized Random Forest spatial growth model,
 forecasts the 2025 classification mask, and updates verdict.json for all zones.
 """
 
@@ -27,7 +27,6 @@ PROJECT_ROOT = Path(__file__).parent.parent
 PRECOMPUTED_DIR = PROJECT_ROOT / "demo" / "precomputed"
 CONFIG_PATH = PROJECT_ROOT / "config" / "settings.yaml"
 
-# Canonical FarmGuard class color maps
 CLASS_COLORS = {
     0: (0, 0, 0),        # background - black
     1: (220, 38, 38),    # buildings - red
@@ -55,20 +54,44 @@ def mask_to_rgb(mask):
     return rgb
 
 def compute_spatial_features(mask):
-    """Generate distance-to-infrastructure features using Euclidean Distance Transform."""
+    """Generate distance features to all canonical classes using EDT."""
     features = []
-    
-    # 1. Distance to buildings (class 1)
-    buildings = (mask == 1).astype(np.uint8)
-    dist_buildings = distance_transform_edt(1 - buildings)
-    features.append(dist_buildings)
-    
-    # 2. Distance to cropland (class 2)
-    crops = (mask == 2).astype(np.uint8)
-    dist_crops = distance_transform_edt(1 - crops)
-    features.append(dist_crops)
-    
+    for cls_id in [1, 2, 3, 4, 5]:
+        cls_mask = (mask == cls_id).astype(np.uint8)
+        dist = distance_transform_edt(1 - cls_mask)
+        features.append(dist)
     return features
+
+def load_spectral_features(zone_dir, year, target_h, target_w):
+    """Load and scale NDVI and True Color features, resizing if needed."""
+    target_size = (target_w, target_h)
+    
+    # 1. Load NDVI
+    ndvi_path = zone_dir / f"ndvi_map_{year}.png"
+    if ndvi_path.exists():
+        img = Image.open(ndvi_path).convert("L")
+        if img.size != target_size:
+            img = img.resize(target_size, Image.Resampling.BILINEAR)
+        ndvi_arr = np.array(img, dtype=np.float32).flatten() / 255.0
+    else:
+        ndvi_arr = np.zeros(target_h * target_w, dtype=np.float32)
+        
+    # 2. Load True Color (RGB)
+    tc_path = zone_dir / f"true_color_{year}.png"
+    if tc_path.exists():
+        img = Image.open(tc_path).convert("RGB")
+        if img.size != target_size:
+            img = img.resize(target_size, Image.Resampling.BILINEAR)
+        tc_arr = np.array(img, dtype=np.float32) / 255.0
+        r = tc_arr[:, :, 0].flatten()
+        g = tc_arr[:, :, 1].flatten()
+        b = tc_arr[:, :, 2].flatten()
+    else:
+        r = np.zeros(target_h * target_w, dtype=np.float32)
+        g = np.zeros(target_h * target_w, dtype=np.float32)
+        b = np.zeros(target_h * target_w, dtype=np.float32)
+        
+    return ndvi_arr, r, g, b
 
 def forecast_zone(zone_key, zone_cfg):
     zone_dir = PRECOMPUTED_DIR / zone_key
@@ -92,14 +115,18 @@ def forecast_zone(zone_key, zone_cfg):
 
     h, w = masks[2017].shape
 
-    # Extract training samples: predict 2021 using 2017 + 2019
+    # Load spectral features for input years
+    ndvi_2019, r_2019, g_2019, b_2019 = load_spectral_features(zone_dir, 2019, h, w)
+    ndvi_2023, r_2023, g_2023, b_2023 = load_spectral_features(zone_dir, 2023, h, w)
+
+    # Extract training samples: predict 2021 using 2017 + 2019 + 2019 spectral features
     logger.info("  Preparing training features...")
     f_2017 = masks[2017].flatten()
     f_2019 = masks[2019].flatten()
     spatial_2019 = compute_spatial_features(masks[2019])
     flat_spatial_2019 = [s.flatten() for s in spatial_2019]
     
-    X_train = np.column_stack([f_2017, f_2019] + flat_spatial_2019)
+    X_train = np.column_stack([f_2017, f_2019] + flat_spatial_2019 + [ndvi_2019, r_2019, g_2019, b_2019])
     y_train = masks[2021].flatten()
 
     # Subsample for training performance
@@ -108,19 +135,19 @@ def forecast_zone(zone_key, zone_cfg):
     X_train_sampled = X_train[sample_indices]
     y_train_sampled = y_train[sample_indices]
 
-    # Train Random Forest
+    # Train Random Forest with class weighting
     logger.info("  Training Random Forest spatial growth model...")
-    clf = RandomForestClassifier(n_estimators=50, max_depth=15, random_state=42, n_jobs=-1)
+    clf = RandomForestClassifier(n_estimators=50, max_depth=15, random_state=42, n_jobs=-1, class_weight="balanced")
     clf.fit(X_train_sampled, y_train_sampled)
 
-    # Forecast 2025: use 2021 + 2023 to forecast 2025
+    # Forecast 2025: use 2021 + 2023 + 2023 spectral features
     logger.info("  Predicting 2025 mask...")
     f_2021 = masks[2021].flatten()
     f_2023 = masks[2023].flatten()
     spatial_2023 = compute_spatial_features(masks[2023])
     flat_spatial_2023 = [s.flatten() for s in spatial_2023]
     
-    X_forecast = np.column_stack([f_2021, f_2023] + flat_spatial_2023)
+    X_forecast = np.column_stack([f_2021, f_2023] + flat_spatial_2023 + [ndvi_2023, r_2023, g_2023, b_2023])
     y_forecast = clf.predict(X_forecast)
     forecast_mask = y_forecast.reshape((h, w))
 
@@ -130,7 +157,6 @@ def forecast_zone(zone_key, zone_cfg):
     Image.fromarray(forecast_rgb).save(output_path)
     logger.info(f"  Saved predicted mask: {output_path.name}")
 
-    # Load existing verdict.json
     # Rebuild entire timeseries from scratch to remove road class and update indices
     new_timeseries = []
     for yr in [2017, 2019, 2021, 2023]:
@@ -146,7 +172,14 @@ def forecast_zone(zone_key, zone_cfg):
         new_timeseries.append(yr_stats)
 
     # Append 2025 stats
+    stats = compute_abi(forecast_mask)
     stats["year"] = 2025
+    stats["soil_pixels"] = int((forecast_mask == 5).sum())
+    stats["soil_pct"] = round(stats["soil_pixels"] / forecast_mask.size * 100, 2)
+    stats["buildings_pct"] = round(stats["buildings_pixels"] / forecast_mask.size * 100, 2)
+    stats["vegetation_pct"] = round(stats["vegetation_pixels"] / forecast_mask.size * 100, 2)
+    stats["water_pct"] = round(stats["water_pixels"] / forecast_mask.size * 100, 2)
+    stats["cropland_pct"] = round(stats["cropland_pixels"] / forecast_mask.size * 100, 2)
     new_timeseries.append(stats)
     new_timeseries = sorted(new_timeseries, key=lambda x: x["year"])
 
@@ -156,6 +189,7 @@ def forecast_zone(zone_key, zone_cfg):
     # Re-run grader to generate final verdict summary
     new_verdict = generate_verdict(new_timeseries, zone_key, cropland_loss_ha=loss_ha)
     
+    verdict_path = zone_dir / "verdict.json"
     with open(verdict_path, "w") as f:
         json.dump(new_verdict, f, indent=2)
     
