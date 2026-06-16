@@ -1,12 +1,12 @@
 {
   "zone": "bengaluru",
   "latest_year": 2025,
-  "abi": 0.1241,
+  "abi": 0.1471,
   "grade": "F",
   "label": "Critical \u2014 Encroachment Alert",
   "description": "Severe urban encroachment. Cropland loss quantified. Immediate Sat4Risk repricing and MRV audit required.",
-  "overall_abi_change_pct": -44.4,
-  "cropland_loss_ha": 9435.52,
+  "overall_abi_change_pct": -34.2,
+  "cropland_loss_ha": 7448.94,
   "encroachment_alert": true,
   "timeseries": [
     {
@@ -78,22 +78,22 @@
       "water_pct": 1.73
     },
     {
-      "abi": 0.1241,
-      "cropland_pixels": 314904,
-      "vegetation_pixels": 484133,
-      "water_pixels": 174895,
-      "buildings_pixels": 7849108,
-      "buffer_pixels": 973932,
-      "encroach_pixels": 7849108,
-      "cropland_pct": 3.17,
-      "encroach_pct": 79.02,
+      "abi": 0.1471,
+      "cropland_pixels": 513562,
+      "vegetation_pixels": 500888,
+      "water_pixels": 170051,
+      "buildings_pixels": 8053809,
+      "buffer_pixels": 1184501,
+      "encroach_pixels": 8053809,
+      "cropland_pct": 5.17,
+      "encroach_pct": 81.08,
       "year": 2025,
-      "soil_pixels": 1110274,
-      "soil_pct": 11.18,
-      "buildings_pct": 79.02,
-      "vegetation_pct": 4.87,
-      "water_pct": 1.76
+      "soil_pixels": 695004,
+      "soil_pct": 7.0,
+      "buildings_pct": 81.08,
+      "vegetation_pct": 5.04,
+      "water_pct": 1.71
     }
   ],
-  "summary": "bengaluru \u2014 ABI: 0.12 (-44.4% since 2017). Cropland lost: 9435.5 ha. Grade: F \u2014 Critical \u2014 Encroachment Alert. \u26a0\ufe0f Encroachment Alert Active."
+  "summary": "bengaluru \u2014 ABI: 0.15 (-34.2% since 2017). Cropland lost: 7448.9 ha. Grade: F \u2014 Critical \u2014 Encroachment Alert. \u26a0\ufe0f Encroachment Alert Active."
 }
