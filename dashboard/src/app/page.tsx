@@ -3,10 +3,13 @@
 import React, { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 
-// Dynamically import ThreeJS components to prevent SSR canvas size and window reference bugs
-const ThreeGlobe = dynamic(() => import("../components/ThreeGlobe"), { ssr: false });
-const ThreeMapProjection = dynamic(() => import("../components/ThreeMapProjection"), { ssr: false });
+// Lazy load to avoid SSR issues with browser APIs (canvas, etc.)
+const LeafletMap = dynamic(() => import("../components/LeafletMap"), { ssr: false });
+const SliderComparison = dynamic(() => import("../components/SliderComparison"), { ssr: false });
 
+// ============================================================
+// TYPES
+// ============================================================
 interface ZoneData {
   key: string;
   name: string;
@@ -75,22 +78,18 @@ interface AnalysisResponse {
   transitions: Transition[];
   timeseries: TimeseriesRecord[];
   overlays: {
-    before: {
-      true_color: string | null;
-      ndvi: string | null;
-      mask: string | null;
-    };
-    after: {
-      true_color: string | null;
-      ndvi: string | null;
-      mask: string | null;
-    };
+    before: { true_color: string | null; ndvi: string | null; mask: string | null };
+    after: { true_color: string | null; ndvi: string | null; mask: string | null };
   };
 }
 
+// ============================================================
+// CONSTANTS
+// ============================================================
 const API_ORIGIN = "http://localhost:8000";
 
-// Fallback simulated data in case FastAPI server is offline
+// ---- Real data from precomputed verdict.json files ----
+// These are the actual Sentinel-2 derived values. Used when API is offline.
 const FALLBACK_ZONES: ZoneData[] = [
   {
     key: "nashik_north",
@@ -99,11 +98,11 @@ const FALLBACK_ZONES: ZoneData[] = [
     center: [20.15, 73.85],
     years: [2017, 2019, 2021, 2023, 2025],
     satyukt_relevance: "Grape and onion belt. Sat4Risk flood zone. MRV baseline.",
-    latest_grade: "C",
-    latest_abi: 0.584,
-    overall_abi_change_pct: -15.2,
-    cropland_loss_ha: 1420.5,
-    encroachment_alert: false,
+    latest_grade: "A",
+    latest_abi: 6.4025,
+    overall_abi_change_pct: -51.4,
+    cropland_loss_ha: 5497.24,
+    encroachment_alert: true,
   },
   {
     key: "vijayawada_west",
@@ -112,10 +111,10 @@ const FALLBACK_ZONES: ZoneData[] = [
     center: [16.55, 80.575],
     years: [2017, 2019, 2021, 2023, 2025],
     satyukt_relevance: "Krishna delta cropland. Insurance client region.",
-    latest_grade: "B",
-    latest_abi: 1.124,
-    overall_abi_change_pct: -4.8,
-    cropland_loss_ha: 520.1,
+    latest_grade: "A",
+    latest_abi: 3.2685,
+    overall_abi_change_pct: -13.1,
+    cropland_loss_ha: 2328.44,
     encroachment_alert: false,
   },
   {
@@ -125,11 +124,11 @@ const FALLBACK_ZONES: ZoneData[] = [
     center: [15.38, 75.075],
     years: [2017, 2019, 2021, 2023, 2025],
     satyukt_relevance: "Karnataka agri zone. Satyukt active partner region.",
-    latest_grade: "F",
-    latest_abi: 0.285,
-    overall_abi_change_pct: -38.6,
-    cropland_loss_ha: 4120.4,
-    encroachment_alert: true,
+    latest_grade: "A",
+    latest_abi: 3.2306,
+    overall_abi_change_pct: -14.7,
+    cropland_loss_ha: 2997.63,
+    encroachment_alert: false,
   },
   {
     key: "bengaluru",
@@ -139,656 +138,682 @@ const FALLBACK_ZONES: ZoneData[] = [
     years: [2017, 2019, 2021, 2023, 2025],
     satyukt_relevance: "Satyukt headquarters regional cropland buffer tracker.",
     latest_grade: "F",
-    latest_abi: 0.124,
+    latest_abi: 0.1241,
     overall_abi_change_pct: -44.4,
-    cropland_loss_ha: 9435.5,
+    cropland_loss_ha: 9435.52,
     encroachment_alert: true,
   },
 ];
 
+// ---- Real timeseries from precomputed verdict.json files ----
+const PRECOMPUTED_VERDICTS: Record<string, AnalysisResponse> = {
+  nashik_north: {
+    zone_info: { key: "nashik_north", name: "Nashik North Agricultural Zone", bbox: [73.72, 20.05, 73.98, 20.25], center: [20.15, 73.85], years: [2017,2019,2021,2023,2025], satyukt_relevance: "Grape and onion belt. Sat4Risk flood zone. MRV baseline." },
+    metrics: { latest_abi: 6.4025, overall_abi_change_pct: -51.4, cropland_loss_ha: 5497.24, grade: "A", label: "Healthy Buffer", description: "Cropland well-protected. Strong agricultural buffer intact. No MRV flags.", encroachment_alert: true },
+    comparison: { before_year: 2017, after_year: 2025, before_abi: 13.1656, after_abi: 6.4025, abi_change_pct: -51.4 },
+    transitions: [
+      { class_id: 1, class_name: "Buildings",         before_pct: 6.51,  after_pct: 11.95, trend_shift_pct:  5.44, status: "increase" },
+      { class_id: 2, class_name: "Cropland",          before_pct: 83.76, after_pct: 74.75, trend_shift_pct: -9.01, status: "decrease" },
+      { class_id: 3, class_name: "Dense Vegetation",  before_pct: 0.35,  after_pct: 0.0,  trend_shift_pct: -0.35, status: "decrease" },
+      { class_id: 4, class_name: "Water Bodies",      before_pct: 1.65,  after_pct: 1.76, trend_shift_pct:  0.11, status: "stable"   },
+      { class_id: 5, class_name: "Bare Soil",         before_pct: 7.72,  after_pct: 11.54,trend_shift_pct:  3.82, status: "increase" },
+    ],
+    timeseries: [
+      { year:2017, abi:13.1656, buildings_pixels:397374,  cropland_pixels:5109643, vegetation_pixels:21360,  water_pixels:100665, soil_pixels:471014,  buildings_pct:6.51,  cropland_pct:83.76, vegetation_pct:0.35, water_pct:1.65, soil_pct:7.72  },
+      { year:2019, abi:10.5941, buildings_pixels:485022,  cropland_pixels:5057827, vegetation_pixels:2920,   water_pixels:77602,  soil_pixels:476685,  buildings_pct:7.95,  cropland_pct:82.91, vegetation_pct:0.05, water_pct:1.27, soil_pct:7.81  },
+      { year:2021, abi:8.6673,  buildings_pixels:581736,  cropland_pixels:4940737, vegetation_pixels:6174,   water_pixels:95192,  soil_pixels:476217,  buildings_pct:9.54,  cropland_pct:80.99, vegetation_pct:0.10, water_pct:1.56, soil_pct:7.81  },
+      { year:2023, abi:7.1786,  buildings_pixels:672965,  cropland_pixels:4715075, vegetation_pixels:12945,  water_pixels:102919, soil_pixels:596152,  buildings_pct:11.03, cropland_pct:77.30, vegetation_pct:0.21, water_pct:1.69, soil_pct:9.77  },
+      { year:2025, abi:6.4025,  buildings_pixels:728982,  cropland_pixels:4559919, vegetation_pixels:0,      water_pixels:107355, soil_pixels:703800,  buildings_pct:11.95, cropland_pct:74.75, vegetation_pct:0.00, water_pct:1.76, soil_pct:11.54 },
+    ],
+    overlays: { before: { true_color:"/static/nashik_north/true_color_2017.png", ndvi:"/static/nashik_north/ndvi_map_2017.png", mask:"/static/nashik_north/mask_rgb_2017.png" }, after: { true_color:"/static/nashik_north/true_color_2025.png", ndvi:null, mask:"/static/nashik_north/mask_rgb_2025.png" } },
+  },
+  vijayawada_west: {
+    zone_info: { key: "vijayawada_west", name: "Vijayawada West Farmland", bbox: [80.45,16.45,80.70,16.65], center: [16.55,80.575], years: [2017,2019,2021,2023,2025], satyukt_relevance: "Krishna delta cropland. Insurance client region." },
+    metrics: { latest_abi: 3.2685, overall_abi_change_pct: -13.1, cropland_loss_ha: 2328.44, grade: "A", label: "Healthy Buffer", description: "Cropland well-protected. Strong agricultural buffer intact. No MRV flags.", encroachment_alert: false },
+    comparison: { before_year: 2017, after_year: 2025, before_abi: 3.7626, after_abi: 3.2685, abi_change_pct: -13.1 },
+    transitions: [
+      { class_id: 1, class_name: "Buildings",         before_pct: 18.32, after_pct: 20.58, trend_shift_pct:  2.26, status: "increase" },
+      { class_id: 2, class_name: "Cropland",          before_pct: 52.13, after_pct: 48.20, trend_shift_pct: -3.93, status: "decrease" },
+      { class_id: 3, class_name: "Dense Vegetation",  before_pct: 10.44, after_pct: 10.74, trend_shift_pct:  0.30, status: "stable"   },
+      { class_id: 4, class_name: "Water Bodies",      before_pct: 6.36,  after_pct: 8.32,  trend_shift_pct:  1.96, status: "increase" },
+      { class_id: 5, class_name: "Bare Soil",         before_pct: 12.75, after_pct: 12.17, trend_shift_pct: -0.58, status: "stable"   },
+    ],
+    timeseries: [
+      { year:2017, abi:3.7626, buildings_pixels:1085776, cropland_pixels:3089249, vegetation_pixels:618895, water_pixels:377181, soil_pixels:755395, buildings_pct:18.32, cropland_pct:52.13, vegetation_pct:10.44, water_pct:6.36, soil_pct:12.75 },
+      { year:2019, abi:3.0572, buildings_pixels:1281888, cropland_pixels:3058468, vegetation_pixels:450505, water_pixels:410031, soil_pixels:725601, buildings_pct:21.63, cropland_pct:51.61, vegetation_pct:7.60,  water_pct:6.92, soil_pct:12.24 },
+      { year:2021, abi:3.4166, buildings_pixels:1228630, cropland_pixels:3063332, vegetation_pixels:644211, water_pixels:490173, soil_pixels:500150, buildings_pct:20.73, cropland_pct:51.69, vegetation_pct:10.87, water_pct:8.27, soil_pct:8.44  },
+      { year:2023, abi:3.1384, buildings_pixels:1298902, cropland_pixels:3013111, vegetation_pixels:586312, water_pixels:477018, soil_pixels:551153, buildings_pct:21.92, cropland_pct:50.84, vegetation_pct:9.89,  water_pct:8.05, soil_pct:9.30  },
+      { year:2025, abi:3.2685, buildings_pixels:1219485, cropland_pixels:2856405, vegetation_pixels:636530, water_pixels:492948, soil_pixels:721128, buildings_pct:20.58, cropland_pct:48.20, vegetation_pct:10.74, water_pct:8.32, soil_pct:12.17 },
+    ],
+    overlays: { before: { true_color:"/static/vijayawada_west/true_color_2017.png", ndvi:"/static/vijayawada_west/ndvi_map_2017.png", mask:"/static/vijayawada_west/mask_rgb_2017.png" }, after: { true_color:"/static/vijayawada_west/true_color_2025.png", ndvi:null, mask:"/static/vijayawada_west/mask_rgb_2025.png" } },
+  },
+  hubli_outskirts: {
+    zone_info: { key: "hubli_outskirts", name: "Hubli Peripheral Agricultural Zone", bbox: [74.95,15.28,75.20,15.48], center: [15.38,75.075], years: [2017,2019,2021,2023,2025], satyukt_relevance: "Karnataka agri zone. Satyukt active partner region." },
+    metrics: { latest_abi: 3.2306, overall_abi_change_pct: -14.7, cropland_loss_ha: 2997.63, grade: "A", label: "Healthy Buffer", description: "Cropland well-protected. Strong agricultural buffer intact. No MRV flags.", encroachment_alert: false },
+    comparison: { before_year: 2017, after_year: 2025, before_abi: 3.7856, after_abi: 3.2306, abi_change_pct: -14.7 },
+    transitions: [
+      { class_id: 1, class_name: "Buildings",         before_pct: 17.74, after_pct: 21.52, trend_shift_pct:  3.78, status: "increase" },
+      { class_id: 2, class_name: "Cropland",          before_pct: 65.93, after_pct: 60.88, trend_shift_pct: -5.05, status: "decrease" },
+      { class_id: 3, class_name: "Dense Vegetation",  before_pct: 0.87,  after_pct: 7.18,  trend_shift_pct:  6.31, status: "increase" },
+      { class_id: 4, class_name: "Water Bodies",      before_pct: 0.37,  after_pct: 1.46,  trend_shift_pct:  1.09, status: "increase" },
+      { class_id: 5, class_name: "Bare Soil",         before_pct: 15.09, after_pct: 8.96,  trend_shift_pct: -6.13, status: "decrease" },
+    ],
+    timeseries: [
+      { year:2017, abi:3.7856, buildings_pixels:1053873, cropland_pixels:3915894, vegetation_pixels:51573,  water_pixels:22027, soil_pixels:896325, buildings_pct:17.74, cropland_pct:65.93, vegetation_pct:0.87, water_pct:0.37, soil_pct:15.09 },
+      { year:2019, abi:3.5190, buildings_pixels:1129686, cropland_pixels:3900605, vegetation_pixels:44503,  water_pixels:30273, soil_pixels:834625, buildings_pct:19.02, cropland_pct:65.67, vegetation_pct:0.75, water_pct:0.51, soil_pct:14.05 },
+      { year:2021, abi:3.7211, buildings_pixels:1141045, cropland_pixels:3912236, vegetation_pixels:253129, water_pixels:80563, soil_pixels:552719, buildings_pct:19.21, cropland_pct:65.87, vegetation_pct:4.26, water_pct:1.36, soil_pct:9.31  },
+      { year:2023, abi:3.2123, buildings_pixels:1287664, cropland_pixels:3818341, vegetation_pixels:243408, water_pixels:74575, soil_pixels:515704, buildings_pct:21.68, cropland_pct:64.29, vegetation_pct:4.10, water_pct:1.26, soil_pct:8.68  },
+      { year:2025, abi:3.2306, buildings_pixels:1278200, cropland_pixels:3616131, vegetation_pixels:426258, water_pixels:86989, soil_pixels:532114, buildings_pct:21.52, cropland_pct:60.88, vegetation_pct:7.18, water_pct:1.46, soil_pct:8.96  },
+    ],
+    overlays: { before: { true_color:"/static/hubli_outskirts/true_color_2017.png", ndvi:"/static/hubli_outskirts/ndvi_map_2017.png", mask:"/static/hubli_outskirts/mask_rgb_2017.png" }, after: { true_color:"/static/hubli_outskirts/true_color_2025.png", ndvi:null, mask:"/static/hubli_outskirts/mask_rgb_2025.png" } },
+  },
+  bengaluru: {
+    zone_info: { key: "bengaluru", name: "Bengaluru Agricultural Buffer Zone", bbox: [77.45,12.83,77.75,13.1], center: [12.965,77.6], years: [2017,2019,2021,2023,2025], satyukt_relevance: "Satyukt headquarters regional cropland buffer tracker." },
+    metrics: { latest_abi: 0.1241, overall_abi_change_pct: -44.4, cropland_loss_ha: 9435.52, grade: "F", label: "Critical — Encroachment Alert", description: "Severe urban encroachment. Cropland loss quantified. Immediate Sat4Risk repricing and MRV audit required.", encroachment_alert: true },
+    comparison: { before_year: 2017, after_year: 2025, before_abi: 0.2234, after_abi: 0.1241, abi_change_pct: -44.4 },
+    transitions: [
+      { class_id: 1, class_name: "Buildings",         before_pct: 72.16, after_pct: 79.02, trend_shift_pct:  6.86, status: "increase" },
+      { class_id: 2, class_name: "Cropland",          before_pct: 12.67, after_pct: 3.17,  trend_shift_pct: -9.50, status: "decrease" },
+      { class_id: 3, class_name: "Dense Vegetation",  before_pct: 2.01,  after_pct: 4.87,  trend_shift_pct:  2.86, status: "increase" },
+      { class_id: 4, class_name: "Water Bodies",      before_pct: 1.44,  after_pct: 1.76,  trend_shift_pct:  0.32, status: "stable"   },
+      { class_id: 5, class_name: "Bare Soil",         before_pct: 11.72, after_pct: 11.18, trend_shift_pct: -0.54, status: "stable"   },
+    ],
+    timeseries: [
+      { year:2017, abi:0.2234, buildings_pixels:7167929, cropland_pixels:1258456, vegetation_pixels:199815, water_pixels:142751, soil_pixels:1164360, buildings_pct:72.16, cropland_pct:12.67, vegetation_pct:2.01, water_pct:1.44, soil_pct:11.72 },
+      { year:2019, abi:0.1582, buildings_pixels:7592683, cropland_pixels:911627,  vegetation_pixels:156041, water_pixels:133580, soil_pixels:1139383, buildings_pct:76.44, cropland_pct:9.18,  vegetation_pct:1.57, water_pct:1.34, soil_pct:11.47 },
+      { year:2021, abi:0.1565, buildings_pixels:7781264, cropland_pixels:760029,  vegetation_pixels:323218, water_pixels:134315, soil_pixels:934488,  buildings_pct:78.34, cropland_pct:7.65,  vegetation_pct:3.25, water_pct:1.35, soil_pct:9.41  },
+      { year:2023, abi:0.1419, buildings_pixels:7986205, cropland_pixels:536130,  vegetation_pixels:425634, water_pixels:171698, soil_pixels:813647,  buildings_pct:80.40, cropland_pct:5.40,  vegetation_pct:4.28, water_pct:1.73, soil_pct:8.19  },
+      { year:2025, abi:0.1241, buildings_pixels:7849108, cropland_pixels:314904,  vegetation_pixels:484133, water_pixels:174895, soil_pixels:1110274, buildings_pct:79.02, cropland_pct:3.17,  vegetation_pct:4.87, water_pct:1.76, soil_pct:11.18 },
+    ],
+    overlays: { before: { true_color:"/static/bengaluru/true_color_2017.png", ndvi:"/static/bengaluru/ndvi_map_2017.png", mask:"/static/bengaluru/mask_rgb_2017.png" }, after: { true_color:"/static/bengaluru/true_color_2023.png", ndvi:"/static/bengaluru/ndvi_map_2023.png", mask:"/static/bengaluru/mask_rgb_2023.png" } },
+  },
+};
+
+const CLASS_COLORS: Record<string, string> = {
+  Buildings: "#dc2626",
+  Cropland: "#d97706",
+  "Dense Vegetation": "#16a34a",
+  "Water Bodies": "#2563eb",
+  "Bare Soil": "#92400e",
+};
+
+function gradeClass(g: string): string {
+  if (g === "F") return "f";
+  if (g === "C") return "c";
+  if (g === "B") return "b";
+  return "a";
+}
+
+// ============================================================
+// LINE CHART (SVG)
+// ============================================================
+function LineChart({
+  data, beforeYear, afterYear,
+}: { data: TimeseriesRecord[]; beforeYear: number; afterYear: number }) {
+  if (!data.length) return null;
+  const margin = { top: 18, right: 14, bottom: 28, left: 32 };
+  const W = 420, H = 150;
+  const xW = W - margin.left - margin.right;
+  const yH = H - margin.top - margin.bottom;
+
+  const years = data.map(d => d.year);
+  const abis = data.map(d => d.abi);
+  const rawMax = Math.max(...abis);
+  // Round up to a clean number for the Y axis
+  const maxAbi = rawMax < 2 ? Math.ceil(rawMax * 10) / 10 + 0.1
+    : rawMax < 5 ? Math.ceil(rawMax) + 0.5
+    : Math.ceil(rawMax / 2) * 2 + 1;
+
+  // Y-axis grid lines — pick sensible ticks
+  const tickCount = 4;
+  const tickStep = maxAbi / tickCount;
+  const gridTicks = Array.from({ length: tickCount }, (_, i) => +((i + 1) * tickStep).toFixed(2));
+
+  const gx = (yr: number) => margin.left + (years.indexOf(yr) / (years.length - 1)) * xW;
+  const gy = (v: number) => margin.top + yH - (v / maxAbi) * yH;
+
+  const linePts = data.map(d => `${gx(d.year).toFixed(1)},${gy(d.abi).toFixed(1)}`).join(" ");
+  const areaPts = `${gx(years[0])},${margin.top + yH} ${linePts} ${gx(years[years.length - 1])},${margin.top + yH}`;
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
+      <defs>
+        <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#059669" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#059669" stopOpacity="0.0" />
+        </linearGradient>
+      </defs>
+      {gridTicks.map(v => (
+        <g key={v}>
+          <line x1={margin.left} y1={gy(v)} x2={W - margin.right} y2={gy(v)}
+            stroke="rgba(51,90,130,0.25)" strokeWidth="1" strokeDasharray="3 5" />
+          <text x={margin.left - 5} y={gy(v) + 4} textAnchor="end"
+            fill="rgba(77,101,128,0.9)" fontSize="8" fontFamily="monospace">
+            {v >= 1 ? v.toFixed(1) : v.toFixed(2)}
+          </text>
+        </g>
+      ))}
+      <polygon points={areaPts} fill="url(#chartGrad)" />
+      <polyline fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" points={linePts} />
+      {data.map(d => {
+        const cx = gx(d.year), cy = gy(d.abi);
+        const sel = d.year === beforeYear || d.year === afterYear;
+        return (
+          <g key={d.year}>
+            <text x={cx} y={H - 8} textAnchor="middle" fill="rgba(77,101,128,0.9)"
+              fontSize="9" fontFamily="monospace" fontWeight="700">{d.year}</text>
+            <circle cx={cx} cy={cy} r={sel ? 5 : 3.5}
+              fill={sel ? "#059669" : "#050c14"} stroke={sel ? "#34d399" : "#059669"} strokeWidth={sel ? 2 : 1.5} />
+            {sel && (
+              <text x={cx} y={cy - 9} textAnchor="middle" fill="#34d399"
+                fontSize="8" fontFamily="monospace" fontWeight="700">{d.abi.toFixed(2)}</text>
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+// ============================================================
+// MAIN PAGE
+// ============================================================
 export default function Home() {
   const [zones, setZones] = useState<ZoneData[]>([]);
   const [selectedZoneKey, setSelectedZoneKey] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"globe" | "projection">("globe");
+  const [activeTab, setActiveTab] = useState<"map" | "comparison">("map");
 
-  // Filter criteria states
   const [beforeYear, setBeforeYear] = useState<number>(2017);
   const [afterYear, setAfterYear] = useState<number>(2025);
   const [vizMode, setVizMode] = useState<string>("AI Land Use Classification");
   const [sliderValue, setSliderValue] = useState<number>(50);
-  const [opacity, setOpacity] = useState<number>(0.85);
+  const [opacity, setOpacity] = useState<number>(0.9);
 
-  // Loaded analysis response
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState<boolean>(false);
   const [apiWarning, setApiWarning] = useState<string | null>(null);
 
-  // Color classes for dashboard tags
-  const classColors: { [key: string]: string } = {
-    Buildings: "bg-[#DC2626]",
-    Cropland: "bg-[#D4A017]",
-    "Dense Vegetation": "bg-[#228B22]",
-    "Water Bodies": "bg-[#1E64C8]",
-    "Bare Soil": "bg-[#D2B48C]",
-  };
-
-  // Fetch zones list
+  // ---- Fetch zones ----
   useEffect(() => {
     fetch(`${API_ORIGIN}/api/zones`)
-      .then((res) => {
-        if (!res.ok) throw new Error("API Offline");
-        return res.json();
-      })
-      .then((data) => {
-        setZones(data);
-        setApiWarning(null);
-      })
-      .catch((err) => {
-        console.warn("FastAPI offline, launching simulation fallback.", err);
-        setZones(FALLBACK_ZONES);
-        setApiWarning("API Server Offline. Simulating local dataset.");
-      });
+      .then(r => { if (!r.ok) throw new Error("offline"); return r.json(); })
+      .then(d => { setZones(d); setApiWarning(null); })
+      .catch(() => { setZones(FALLBACK_ZONES); setApiWarning("API offline — showing simulated data"); });
   }, []);
 
-  // Fetch metrics when selection modifies
+  // ---- Fetch analysis ----
   useEffect(() => {
     if (!selectedZoneKey) return;
     setLoadingAnalysis(true);
+    fetch(`${API_ORIGIN}/api/analyse?zone=${selectedZoneKey}&before=${beforeYear}&after=${afterYear}`)
+      .then(r => { if (!r.ok) throw new Error("offline"); return r.json(); })
+      .then(d => setAnalysis(d))
+      .catch(() => {
+        // API offline: use real precomputed verdict data embedded above.
+        // Adjust the comparison slice for the selected year range.
+        const base = PRECOMPUTED_VERDICTS[selectedZoneKey];
+        if (!base) { setLoadingAnalysis(false); return; }
 
-    fetch(
-      `${API_ORIGIN}/api/analyse?zone=${selectedZoneKey}&before=${beforeYear}&after=${afterYear}`
-    )
-      .then((res) => {
-        if (!res.ok) throw new Error("Analysis failed");
-        return res.json();
+        const ts = base.timeseries;
+        const rb = ts.find(r => r.year === beforeYear) ?? ts[0];
+        const ra = ts.find(r => r.year === afterYear)  ?? ts[ts.length - 1];
+        const abiChangePct = rb.abi > 0
+          ? +((( ra.abi - rb.abi) / rb.abi) * 100).toFixed(1)
+          : 0;
+
+        const transitions: Transition[] = [
+          { class_id:1, class_name:"Buildings",        before_pct:rb.buildings_pct,  after_pct:ra.buildings_pct,  trend_shift_pct:+(ra.buildings_pct  - rb.buildings_pct).toFixed(2),  status: ra.buildings_pct  > rb.buildings_pct  + 0.05 ? "increase" : ra.buildings_pct  < rb.buildings_pct  - 0.05 ? "decrease" : "stable" },
+          { class_id:2, class_name:"Cropland",         before_pct:rb.cropland_pct,   after_pct:ra.cropland_pct,   trend_shift_pct:+(ra.cropland_pct   - rb.cropland_pct).toFixed(2),   status: ra.cropland_pct   > rb.cropland_pct   + 0.05 ? "increase" : ra.cropland_pct   < rb.cropland_pct   - 0.05 ? "decrease" : "stable" },
+          { class_id:3, class_name:"Dense Vegetation", before_pct:rb.vegetation_pct, after_pct:ra.vegetation_pct, trend_shift_pct:+(ra.vegetation_pct - rb.vegetation_pct).toFixed(2), status: ra.vegetation_pct > rb.vegetation_pct + 0.05 ? "increase" : ra.vegetation_pct < rb.vegetation_pct - 0.05 ? "decrease" : "stable" },
+          { class_id:4, class_name:"Water Bodies",     before_pct:rb.water_pct,      after_pct:ra.water_pct,      trend_shift_pct:+(ra.water_pct      - rb.water_pct).toFixed(2),      status: ra.water_pct      > rb.water_pct      + 0.05 ? "increase" : ra.water_pct      < rb.water_pct      - 0.05 ? "decrease" : "stable" },
+          { class_id:5, class_name:"Bare Soil",        before_pct:rb.soil_pct,       after_pct:ra.soil_pct,       trend_shift_pct:+(ra.soil_pct       - rb.soil_pct).toFixed(2),       status: ra.soil_pct       > rb.soil_pct       + 0.05 ? "increase" : ra.soil_pct       < rb.soil_pct       - 0.05 ? "decrease" : "stable" },
+        ];
+
+        // Overlay paths — only link years that actually exist in precomputed dir
+        const BEFORE_YEARS_WITH_TRUE_COLOR = [2017, 2019, 2021, 2023];
+        const AFTER_YEARS_WITH_TRUE_COLOR  = [2017, 2019, 2021, 2023];
+        const bTC = BEFORE_YEARS_WITH_TRUE_COLOR.includes(beforeYear)
+          ? `/static/${selectedZoneKey}/true_color_${beforeYear}.png` : null;
+        const aTC = AFTER_YEARS_WITH_TRUE_COLOR.includes(afterYear)
+          ? `/static/${selectedZoneKey}/true_color_${afterYear}.png`  : null;
+        const bNDVI = BEFORE_YEARS_WITH_TRUE_COLOR.includes(beforeYear)
+          ? `/static/${selectedZoneKey}/ndvi_map_${beforeYear}.png` : null;
+        const aNDVI = AFTER_YEARS_WITH_TRUE_COLOR.includes(afterYear)
+          ? `/static/${selectedZoneKey}/ndvi_map_${afterYear}.png`  : null;
+        const MASK_YEARS = [2017, 2019, 2021, 2023, 2025];
+        const bMask = MASK_YEARS.includes(beforeYear)
+          ? `/static/${selectedZoneKey}/mask_rgb_${beforeYear}.png` : null;
+        const aMask = MASK_YEARS.includes(afterYear)
+          ? `/static/${selectedZoneKey}/mask_rgb_${afterYear}.png`  : null;
+
+        setAnalysis({
+          ...base,
+          comparison: { before_year: beforeYear, after_year: afterYear, before_abi: rb.abi, after_abi: ra.abi, abi_change_pct: abiChangePct },
+          transitions,
+          overlays: {
+            before: { true_color: bTC, ndvi: bNDVI, mask: bMask },
+            after:  { true_color: aTC, ndvi: aNDVI, mask: aMask },
+          },
+        });
       })
-      .then((data) => {
-        setAnalysis(data);
-      })
-      .catch((err) => {
-        console.warn("FastAPI analytics offline, fabricating metrics locally.", err);
-        const activeZone = zones.find((z) => z.key === selectedZoneKey);
-        if (activeZone) {
-          const years = activeZone.years;
-          const timeseries: TimeseriesRecord[] = years.map((yr, idx) => {
-            const stepRatio = idx / (years.length - 1);
-            let abiVal = 1.2 - stepRatio * 0.8;
-            if (activeZone.key === "vijayawada_west") abiVal = 1.3 - stepRatio * 0.15;
-            if (activeZone.key === "nashik_north") abiVal = 0.8 - stepRatio * 0.22;
-            
-            const baseBuild = activeZone.key === "bengaluru" ? 5000000 : 2000000;
-            const b_px = Math.round(baseBuild * (1 + stepRatio * 0.5));
-            const c_px = Math.round(3000000 * (1 - stepRatio * 0.45));
-            const v_px = Math.round(800000 * (1 - stepRatio * 0.2));
-            const w_px = Math.round(500000 * (1 + Math.sin(idx) * 0.1));
-            const s_px = 2000000;
-            const total = b_px + c_px + v_px + w_px + s_px;
+      .finally(() => setLoadingAnalysis(false));
+  }, [selectedZoneKey, beforeYear, afterYear]);
 
-            return {
-              year: yr,
-              abi: Number(abiVal.toFixed(3)),
-              cropland_pixels: c_px,
-              vegetation_pixels: v_px,
-              water_pixels: w_px,
-              buildings_pixels: b_px,
-              soil_pixels: s_px,
-              cropland_pct: Number(((c_px / total) * 100).toFixed(2)),
-              vegetation_pct: Number(((v_px / total) * 100).toFixed(2)),
-              water_pct: Number(((w_px / total) * 100).toFixed(2)),
-              buildings_pct: Number(((b_px / total) * 100).toFixed(2)),
-              soil_pct: Number(((s_px / total) * 100).toFixed(2)),
-            };
-          });
-
-          const recBefore = timeseries.find((t) => t.year === beforeYear) || timeseries[0];
-          const recAfter = timeseries.find((t) => t.year === afterYear) || timeseries[timeseries.length - 1];
-
-          const mockAnalysis: AnalysisResponse = {
-            zone_info: {
-              key: activeZone.key,
-              name: activeZone.name,
-              bbox: activeZone.bbox,
-              center: activeZone.center,
-              years: activeZone.years,
-              satyukt_relevance: activeZone.satyukt_relevance,
-            },
-            metrics: {
-              latest_abi: activeZone.latest_abi,
-              overall_abi_change_pct: activeZone.overall_abi_change_pct,
-              cropland_loss_ha: activeZone.cropland_loss_ha,
-              grade: activeZone.latest_grade,
-              label: activeZone.latest_grade === "F" ? "Critical Encroachment Alert" : activeZone.latest_grade === "C" ? "Elevated Risk Buffer" : "Stable Farmland Buffer",
-              description: `Agricultural buffer encroached by urban expansion. Sat4Risk risk evaluation triggers MRV audits.`,
-              encroachment_alert: activeZone.encroachment_alert,
-            },
-            comparison: {
-              before_year: beforeYear,
-              after_year: afterYear,
-              before_abi: recBefore.abi,
-              after_abi: recAfter.abi,
-              abi_change_pct: Number((((recAfter.abi - recBefore.abi) / recBefore.abi) * 100).toFixed(1)),
-            },
-            transitions: [
-              { class_id: 1, class_name: "Buildings", before_pct: recBefore.buildings_pct, after_pct: recAfter.buildings_pct, trend_shift_pct: recAfter.buildings_pct - recBefore.buildings_pct, status: recAfter.buildings_pct > recBefore.buildings_pct + 0.1 ? "increase" : "stable" },
-              { class_id: 2, class_name: "Cropland", before_pct: recBefore.cropland_pct, after_pct: recAfter.cropland_pct, trend_shift_pct: recAfter.cropland_pct - recBefore.cropland_pct, status: recAfter.cropland_pct < recBefore.cropland_pct - 0.1 ? "decrease" : "stable" },
-              { class_id: 3, class_name: "Dense Vegetation", before_pct: recBefore.vegetation_pct, after_pct: recAfter.vegetation_pct, trend_shift_pct: recAfter.vegetation_pct - recBefore.vegetation_pct, status: recAfter.vegetation_pct < recBefore.vegetation_pct - 0.1 ? "decrease" : "stable" },
-              { class_id: 4, class_name: "Water Bodies", before_pct: recBefore.water_pct, after_pct: recAfter.water_pct, trend_shift_pct: recAfter.water_pct - recBefore.water_pct, status: "stable" },
-              { class_id: 5, class_name: "Bare Soil", before_pct: recBefore.soil_pct, after_pct: recAfter.soil_pct, trend_shift_pct: recAfter.soil_pct - recBefore.soil_pct, status: "stable" },
-            ],
-            timeseries: timeseries,
-            overlays: {
-              before: {
-                true_color: `/static/${activeZone.key}/true_color_${beforeYear}.png`,
-                ndvi: `/static/${activeZone.key}/ndvi_map_${beforeYear}.png`,
-                mask: `/static/${activeZone.key}/mask_rgb_${beforeYear}.png`,
-              },
-              after: {
-                true_color: `/static/${activeZone.key}/true_color_${afterYear}.png`,
-                ndvi: `/static/${activeZone.key}/ndvi_map_${afterYear}.png`,
-                mask: `/static/${activeZone.key}/mask_rgb_${afterYear}.png`,
-              },
-            },
-          };
-          setAnalysis(mockAnalysis);
-        }
-      })
-      .finally(() => {
-        setLoadingAnalysis(false);
-      });
-  }, [selectedZoneKey, beforeYear, afterYear, vizMode, zones]);
-
-  // Select zone handler
   const handleSelectZone = (key: string) => {
     setSelectedZoneKey(key);
-    const zoneObj = zones.find((z) => z.key === key);
-    if (zoneObj && zoneObj.years.length > 0) {
-      setBeforeYear(zoneObj.years[0]);
-      setAfterYear(zoneObj.years[zoneObj.years.length - 1]);
-    }
-    setActiveTab("projection");
+    const z = zones.find(z => z.key === key);
+    if (z) { setBeforeYear(z.years[0]); setAfterYear(z.years[z.years.length - 1]); }
+    setActiveTab("comparison");
   };
 
-  const currentZone = zones.find((z) => z.key === selectedZoneKey) || null;
+  const currentZone = zones.find(z => z.key === selectedZoneKey) || null;
 
-  // Resolve active projection texture links
-  const beforeOverlayUrl = analysis
-    ? vizMode === "True Color Satellite Image"
-      ? analysis.overlays.before.true_color
-      : vizMode === "NDVI Vegetation Map"
-      ? analysis.overlays.before.ndvi
-      : analysis.overlays.before.mask
-    : null;
-
-  const afterOverlayUrl = analysis
-    ? vizMode === "True Color Satellite Image"
-      ? analysis.overlays.after.true_color
-      : vizMode === "NDVI Vegetation Map"
-      ? analysis.overlays.after.ndvi
-      : analysis.overlays.after.mask
-    : null;
-
-  // Custom vector line chart
-  const renderLineChart = () => {
-    if (!analysis || analysis.timeseries.length === 0) return null;
-
-    const data = analysis.timeseries;
-    const margin = { top: 20, right: 20, bottom: 30, left: 35 };
-    const width = 450;
-    const height = 180;
-
-    const xMax = width - margin.left - margin.right;
-    const yMax = height - margin.top - margin.bottom;
-
-    const years = data.map((d) => d.year);
-    const abis = data.map((d) => d.abi);
-
-    const maxAbi = Math.max(...abis, 2.0);
-    const minAbi = 0.0;
-
-    const getX = (year: number) => {
-      const idx = years.indexOf(year);
-      return margin.left + (idx / (years.length - 1)) * xMax;
-    };
-
-    const getY = (abi: number) => {
-      return margin.top + yMax - ((abi - minAbi) / (maxAbi - minAbi)) * yMax;
-    };
-
-    const points = data.map((d) => `${getX(d.year)},${getY(d.abi)}`).join(" ");
-
-    const areaPoints = `${getX(years[0])},${margin.top + yMax} ` + 
-                       points + 
-                       ` ${getX(years[years.length - 1])},${margin.top + yMax}`;
-
-    return (
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto mt-2">
-        <defs>
-          <linearGradient id="abiGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#10B981" stopOpacity="0.25" />
-            <stop offset="100%" stopColor="#10B981" stopOpacity="0.0" />
-          </linearGradient>
-        </defs>
-
-        {/* Y-Axis lines */}
-        {[0.5, 1.0, 1.5, 2.0].map((val) => {
-          const y = getY(val);
-          return (
-            <g key={val}>
-              <line x1={margin.left} y1={y} x2={width - margin.right} y2={y} stroke="#f1f5f9" strokeWidth="1" />
-              <text x={margin.left - 8} y={y + 4} textAnchor="end" className="text-[9px] fill-slate-400 font-mono">
-                {val.toFixed(1)}
-              </text>
-            </g>
-          );
-        })}
-
-        {/* X-Axis ticks */}
-        {data.map((d) => {
-          const x = getX(d.year);
-          return (
-            <g key={d.year}>
-              <line x1={x} y1={margin.top} x2={x} y2={margin.top + yMax} stroke="#f8fafc" strokeWidth="1.5" />
-              <text x={x} y={margin.top + yMax + 16} textAnchor="middle" className="text-[10px] fill-slate-500 font-semibold font-mono">
-                {d.year}
-              </text>
-            </g>
-          );
-        })}
-
-        <polygon points={areaPoints} fill="url(#abiGrad)" />
-        <polyline fill="none" stroke="#059669" strokeWidth="2.5" points={points} />
-
-        {data.map((d) => {
-          const cx = getX(d.year);
-          const cy = getY(d.abi);
-          const isSelected = d.year === beforeYear || d.year === afterYear;
-          return (
-            <g key={d.year}>
-              <circle
-                cx={cx}
-                cy={cy}
-                r={isSelected ? 6 : 4}
-                className={`${isSelected ? "fill-emerald-600 stroke-white stroke-2" : "fill-white stroke-emerald-500 stroke-1.5"} cursor-pointer`}
-              />
-              <text x={cx} y={cy - 9} textAnchor="middle" className="text-[9px] fill-slate-900 font-bold bg-white px-1">
-                {d.abi.toFixed(2)}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-    );
+  const getOverlayUrl = (which: "before" | "after") => {
+    if (!analysis) return null;
+    const ov = analysis.overlays[which];
+    if (vizMode === "True Color Satellite Image") return ov.true_color;
+    if (vizMode === "NDVI Vegetation Map") return ov.ndvi;
+    return ov.mask;
   };
 
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
-    <div className="flex-1 flex flex-col font-sans">
-      {/* Top Navigation Bar */}
-      <header className="sticky top-0 bg-white border-b border-slate-200/90 z-20 px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">FarmGuard</h1>
-            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wide font-mono">
-              SATYUKT TECHNOLOGY
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1 font-mono uppercase tracking-wider">
-            Satellite Farmland Encroachment & Environmental Risk Auditor
-          </p>
-        </div>
+    <div
+      style={{
+        height: "100dvh", maxHeight: "100dvh",
+        display: "flex", flexDirection: "column",
+        overflow: "hidden", background: "var(--bg-base)",
+      }}
+      className="bg-grid"
+    >
+      {/* Scanning line */}
+      <div className="scan-line" />
 
-        {apiWarning && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 flex items-center gap-2 text-xs text-amber-800 font-mono">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0 animate-ping" />
-            <span>{apiWarning}</span>
+      {/* ==================================================
+          HEADER
+      ================================================== */}
+      <header style={{
+        flexShrink: 0,
+        background: "rgba(5,12,20,0.97)",
+        borderBottom: "1px solid var(--border-dim)",
+        backdropFilter: "blur(8px)",
+        zIndex: 30,
+      }}>
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "10px 20px", gap: 16,
+        }}>
+          {/* Brand */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{
+              width: 34, height: 34, borderRadius: 8,
+              background: "rgba(5,150,105,0.15)",
+              border: "1px solid rgba(5,150,105,0.4)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "0 0 12px rgba(5,150,105,0.2)",
+            }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2" strokeLinecap="round">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <path d="M2 17l10 5 10-5" />
+                <path d="M2 12l10 5 10-5" />
+              </svg>
+            </div>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <h1 style={{ fontSize: 17, fontWeight: 800, letterSpacing: "-0.02em", color: "var(--text-primary)", lineHeight: 1 }}>
+                  FarmGuard
+                </h1>
+                <span style={{
+                  background: "rgba(5,150,105,0.15)", color: "var(--emerald-400)",
+                  border: "1px solid rgba(5,150,105,0.3)", borderRadius: 4,
+                  padding: "2px 6px", fontSize: 9, fontWeight: 700, fontFamily: "monospace",
+                  letterSpacing: "0.1em", textTransform: "uppercase",
+                }}>SATYUKT</span>
+              </div>
+              <p style={{
+                marginTop: 2, fontSize: 9, fontFamily: "monospace",
+                letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)",
+              }}>
+                Satellite Farmland Encroachment &amp; Environmental Risk System
+              </p>
+            </div>
           </div>
-        )}
+
+          {/* Status bar */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {apiWarning && (
+              <div style={{
+                display: "flex", alignItems: "center", gap: 6,
+                background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.25)",
+                borderRadius: 6, padding: "5px 10px", fontSize: 10, fontFamily: "monospace", color: "var(--amber-400)",
+              }}>
+                <span className="dot-pulse amber" />
+                {apiWarning}
+              </div>
+            )}
+            <div style={{
+              display: "flex", alignItems: "center", gap: 6,
+              background: "rgba(5,150,105,0.08)", border: "1px solid rgba(5,150,105,0.2)",
+              borderRadius: 6, padding: "5px 10px", fontSize: 10, fontFamily: "monospace", color: "var(--emerald-400)",
+            }}>
+              <span className="dot-pulse emerald" />
+              SENTINEL-2 L2A ACTIVE
+            </div>
+          </div>
+        </div>
+        <div className="header-glow-line" />
       </header>
 
-      {/* Main Split Window */}
-      <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-0 overflow-hidden">
-        
-        {/* Left Side: 3D Visual Workspace */}
-        <section className="lg:col-span-7 bg-[#f8fafc] border-r border-slate-200 flex flex-col min-h-[420px] lg:min-h-0 relative">
-          
-          {/* Flat glass selector tab */}
-          <div className="absolute top-4 left-4 z-10 flex bg-white/90 backdrop-blur-md border border-slate-200/80 p-1 rounded-lg shadow-xs pointer-events-auto">
-            <button
-              onClick={() => setActiveTab("globe")}
-              className={`px-3 py-1.5 rounded-md text-[11px] font-mono uppercase tracking-wider transition-all ${
-                activeTab === "globe"
-                  ? "bg-slate-900 text-white shadow-xs"
-                  : "text-slate-500 hover:text-slate-900"
-              }`}
-            >
-              Globe Map
+      {/* ==================================================
+          MAIN SPLIT
+      ================================================== */}
+      <main style={{
+        flex: 1, display: "grid",
+        gridTemplateColumns: "1fr 420px",
+        minHeight: 0, overflow: "hidden",
+      }}>
+
+        {/* ================================================
+            LEFT — VISUAL WORKSPACE
+        ================================================ */}
+        <section style={{
+          display: "flex", flexDirection: "column",
+          position: "relative", minHeight: 0,
+          borderRight: "1px solid var(--border-dim)",
+          overflow: "hidden",
+        }}>
+          {/* Tab bar */}
+          <div style={{
+            position: "absolute", top: 12, left: 12, zIndex: 20,
+            display: "flex",
+            background: "rgba(5,12,20,0.92)",
+            backdropFilter: "blur(10px)",
+            border: "1px solid var(--border-dim)",
+            borderRadius: 8, padding: 3, gap: 2,
+          }}>
+            <button className={`tab-btn ${activeTab === "map" ? "active" : ""}`}
+              onClick={() => setActiveTab("map")}>
+              Region Map
             </button>
             <button
+              className={`tab-btn ${activeTab === "comparison" ? "active" : ""}`}
               onClick={() => {
-                if (!selectedZoneKey) {
-                  if (zones.length > 0) handleSelectZone(zones[0].key);
-                } else {
-                  setActiveTab("projection");
-                }
-              }}
-              className={`px-3 py-1.5 rounded-md text-[11px] font-mono uppercase tracking-wider transition-all ${
-                activeTab === "projection"
-                  ? "bg-slate-900 text-white shadow-xs"
-                  : "text-slate-500 hover:text-slate-900"
-              }`}
-            >
-              Area Projection
+                if (!selectedZoneKey && zones.length > 0) handleSelectZone(zones[0].key);
+                else setActiveTab("comparison");
+              }}>
+              Image Comparison
             </button>
           </div>
 
-          {/* ThreeJS Visual Layer */}
-          <div className="flex-1 w-full relative">
-            {activeTab === "globe" ? (
-              <ThreeGlobe
+          {/* View */}
+          <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
+            {activeTab === "map" ? (
+              <LeafletMap
                 zones={zones}
                 selectedZoneKey={selectedZoneKey}
                 onSelectZone={handleSelectZone}
               />
             ) : (
-              <ThreeMapProjection
-                beforeImageUrl={beforeOverlayUrl}
-                afterImageUrl={afterOverlayUrl}
+              <SliderComparison
+                beforeImageUrl={getOverlayUrl("before")}
+                afterImageUrl={getOverlayUrl("after")}
+                beforeYear={beforeYear}
+                afterYear={afterYear}
                 opacity={opacity}
                 isMask={vizMode === "AI Land Use Classification"}
                 sliderValue={sliderValue}
+                onSliderChange={setSliderValue}
               />
             )}
           </div>
         </section>
 
-        {/* Right Side: Sidebar Controls and Metrics */}
-        <section className="lg:col-span-5 bg-white flex flex-col divide-y divide-slate-100 overflow-y-auto max-h-[calc(100vh-80px)]">
-          
-          {/* Setup Configurator */}
-          <div className="p-6 space-y-4">
-            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Analysis Setup</h2>
+        {/* ================================================
+            RIGHT — SIDEBAR
+        ================================================ */}
+        <section style={{
+          display: "flex", flexDirection: "column",
+          background: "var(--bg-surface)", overflow: "hidden", minHeight: 0,
+        }}>
+          {/* Setup panel */}
+          <div style={{
+            flexShrink: 0, padding: "18px 18px 14px",
+            borderBottom: "1px solid var(--border-dim)",
+          }}>
+            <p className="section-label" style={{ marginBottom: 14 }}>Analysis Setup</p>
 
-            {/* Zone Selector */}
-            <div className="space-y-1.5">
-              <label htmlFor="zone-select" className="text-xs font-bold text-slate-700 font-mono uppercase">Target Buffer Zone</label>
-              <select
-                id="zone-select"
-                value={selectedZoneKey || ""}
-                onChange={(e) => handleSelectZone(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 font-semibold focus:outline-hidden focus:ring-1 focus:ring-emerald-500 font-mono"
-              >
-                <option value="" disabled>Select a Region</option>
-                {zones.map((zone) => (
-                  <option key={zone.key} value={zone.key}>
-                    {zone.name.toUpperCase()}
-                  </option>
-                ))}
+            {/* Zone selector */}
+            <div style={{ marginBottom: 12 }}>
+              <label htmlFor="zone-select" className="section-label"
+                style={{ display: "block", marginBottom: 6, color: "var(--text-secondary)" }}>
+                Target Buffer Zone
+              </label>
+              <select id="zone-select" value={selectedZoneKey || ""}
+                onChange={e => handleSelectZone(e.target.value)}>
+                <option value="" disabled>Select a Region…</option>
+                {zones.map(z => <option key={z.key} value={z.key}>{z.name}</option>)}
               </select>
             </div>
 
-            {currentZone && (
-              <>
-                {/* Year Selection */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label htmlFor="before-year" className="text-xs font-bold text-slate-700 font-mono uppercase">Baseline Year</label>
-                    <select
-                      id="before-year"
-                      value={beforeYear}
-                      onChange={(e) => setBeforeYear(Number(e.target.value))}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 font-semibold focus:outline-hidden font-mono"
-                    >
-                      {currentZone.years.map((yr) => (
-                        <option key={yr} value={yr} disabled={yr >= afterYear}>
-                          {yr}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label htmlFor="after-year" className="text-xs font-bold text-slate-700 font-mono uppercase">Audited Year</label>
-                    <select
-                      id="after-year"
-                      value={afterYear}
-                      onChange={(e) => setAfterYear(Number(e.target.value))}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 font-semibold focus:outline-hidden font-mono"
-                    >
-                      {currentZone.years.map((yr) => (
-                        <option key={yr} value={yr} disabled={yr <= beforeYear}>
-                          {yr}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Projection Overlay Modes */}
-                <div className="space-y-1.5">
-                  <label htmlFor="viz-mode" className="text-xs font-bold text-slate-700 font-mono uppercase">Raster Overlay Mode</label>
-                  <select
-                    id="viz-mode"
-                    value={vizMode}
-                    onChange={(e) => setVizMode(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 font-semibold focus:outline-hidden focus:ring-1 focus:ring-emerald-500 font-mono"
-                  >
-                    <option value="AI Land Use Classification">AI Land Use Classification</option>
-                    <option value="True Color Satellite Image">True Color Satellite Image</option>
-                    <option value="NDVI Vegetation Map">NDVI Vegetation Map</option>
+            {currentZone && (<>
+              {/* Year selectors */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+                <div>
+                  <label htmlFor="before-yr" className="section-label"
+                    style={{ display: "block", marginBottom: 6, color: "var(--text-secondary)" }}>
+                    Baseline Year
+                  </label>
+                  <select id="before-yr" value={beforeYear} onChange={e => setBeforeYear(Number(e.target.value))}>
+                    {currentZone.years.map(yr => <option key={yr} value={yr} disabled={yr >= afterYear}>{yr}</option>)}
                   </select>
                 </div>
+                <div>
+                  <label htmlFor="after-yr" className="section-label"
+                    style={{ display: "block", marginBottom: 6, color: "var(--text-secondary)" }}>
+                    Audited Year
+                  </label>
+                  <select id="after-yr" value={afterYear} onChange={e => setAfterYear(Number(e.target.value))}>
+                    {currentZone.years.map(yr => <option key={yr} value={yr} disabled={yr <= beforeYear}>{yr}</option>)}
+                  </select>
+                </div>
+              </div>
 
-                {/* Sliders for split wipe and opacity */}
-                {activeTab === "projection" && (
-                  <div className="space-y-4 pt-2">
-                    {/* Swipe slider */}
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between items-center">
-                        <label htmlFor="wipe-slider" className="text-xs font-bold text-slate-700 font-mono uppercase">Split-Wipe Divider</label>
-                        <span className="text-[10px] font-mono text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded-sm">
-                          {sliderValue}% After
-                        </span>
-                      </div>
-                      <input
-                        id="wipe-slider"
-                        type="range"
-                        min="0"
-                        max="100"
-                        value={sliderValue}
-                        onChange={(e) => setSliderValue(Number(e.target.value))}
-                        className="w-full accent-emerald-600 h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
+              {/* Viz mode */}
+              <div style={{ marginBottom: 12 }}>
+                <label htmlFor="viz-mode" className="section-label"
+                  style={{ display: "block", marginBottom: 6, color: "var(--text-secondary)" }}>
+                  Raster Overlay Mode
+                </label>
+                <select id="viz-mode" value={vizMode} onChange={e => setVizMode(e.target.value)}>
+                  <option value="AI Land Use Classification">AI Land Use Classification</option>
+                  <option value="True Color Satellite Image">True Color Satellite Image</option>
+                  <option value="NDVI Vegetation Map">NDVI Vegetation Map</option>
+                </select>
+              </div>
 
-                    {/* Opacity slider */}
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between items-center">
-                        <label htmlFor="opacity-slider" className="text-xs font-bold text-slate-700 font-mono uppercase">Texture Opacity</label>
-                        <span className="text-[10px] font-mono text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded-sm">
-                          {Math.round(opacity * 100)}%
-                        </span>
-                      </div>
-                      <input
-                        id="opacity-slider"
-                        type="range"
-                        min="0"
-                        max="100"
-                        value={opacity * 100}
-                        onChange={(e) => setOpacity(Number(e.target.value) / 100)}
-                        className="w-full accent-emerald-600 h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
+              {/* Opacity (only relevant for image comparison) */}
+              {activeTab === "comparison" && (
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                    <span className="section-label" style={{ color: "var(--text-secondary)" }}>Image Opacity</span>
+                    <span style={{
+                      fontSize: 10, fontFamily: "monospace", fontWeight: 700,
+                      color: "var(--emerald-400)", background: "var(--emerald-dim)",
+                      border: "1px solid rgba(5,150,105,0.25)", borderRadius: 4, padding: "1px 6px",
+                    }}>{Math.round(opacity * 100)}%</span>
                   </div>
-                )}
-              </>
-            )}
+                  <input type="range" min="20" max="100" value={opacity * 100}
+                    onChange={e => setOpacity(Number(e.target.value) / 100)} />
+                </div>
+              )}
+            </>)}
           </div>
 
-          {/* Metrics Panel */}
-          <div className="p-6">
+          {/* Metrics panel */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "18px 18px" }}>
             {!selectedZoneKey ? (
-              <div className="text-center py-12 px-6">
-                <p className="text-xs font-bold text-slate-400 font-mono tracking-widest uppercase">
-                  Select a farmland region in the setup panel or click on the 3D Globe pins to inspect risk metrics.
+              <div style={{
+                display: "flex", flexDirection: "column",
+                alignItems: "center", justifyContent: "center",
+                height: "100%", gap: 12, textAlign: "center",
+              }}>
+                <div style={{
+                  width: 48, height: 48, borderRadius: 12,
+                  background: "var(--emerald-dim)", border: "1px solid rgba(5,150,105,0.25)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="1.5">
+                    <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
+                  </svg>
+                </div>
+                <p className="section-label" style={{ maxWidth: 220, lineHeight: 1.8, color: "var(--text-muted)" }}>
+                  Select a farmland region or click a zone pin on the map to begin risk analysis
                 </p>
               </div>
             ) : loadingAnalysis ? (
-              <div className="flex flex-col items-center justify-center py-20 gap-3">
-                <div className="w-6 h-6 rounded-full border-2 border-slate-100 border-t-emerald-600 animate-spin" />
-                <span className="text-[10px] font-bold text-slate-400 font-mono tracking-wider uppercase">
-                  Fetching Sentinel Bands...
-                </span>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 10 }}>
+                <div className="spinner" />
+                <span className="section-label" style={{ color: "var(--text-muted)" }}>Fetching Sentinel Bands…</span>
               </div>
             ) : analysis ? (
-              <div className="space-y-6">
-                {/* Grading header */}
-                <div
-                  className={`border rounded-xl p-4 transition-all ${
-                    analysis.metrics.grade === "F"
-                      ? "bg-red-50/50 border-red-200"
-                      : analysis.metrics.grade === "C"
-                      ? "bg-amber-50/50 border-amber-200"
-                      : "bg-emerald-50/50 border-emerald-200"
-                  }`}
-                >
-                  <div className="flex justify-between items-start gap-4">
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900 font-mono uppercase">
-                        {analysis.zone_info.name}
-                      </h3>
-                      <p className="text-[11px] text-slate-500 mt-1 font-mono uppercase tracking-wider">
-                        Relevance: {analysis.zone_info.satyukt_relevance}
-                      </p>
+              <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+                {/* Zone header */}
+                <div className="glass-card" style={{
+                  padding: "14px 16px",
+                  borderColor: (analysis.metrics.grade === "F" || analysis.metrics.grade === "C") ? "rgba(220,38,38,0.3)" : "rgba(5,150,105,0.25)",
+                  boxShadow: (analysis.metrics.grade === "F" || analysis.metrics.grade === "C") ? "0 0 20px rgba(220,38,38,0.1)" : "0 0 20px rgba(5,150,105,0.08)",
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <h3 style={{
+                        fontSize: 12, fontWeight: 800, fontFamily: "monospace",
+                        textTransform: "uppercase", letterSpacing: "0.06em",
+                        color: "var(--text-primary)",
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}>{analysis.zone_info.name}</h3>
+                      <p style={{
+                        marginTop: 4, fontSize: 9, fontFamily: "monospace",
+                        color: "var(--text-muted)", lineHeight: 1.6,
+                      }}>{analysis.zone_info.satyukt_relevance}</p>
                     </div>
-                    {/* Grade Badge */}
-                    <div
-                      className={`text-center font-black rounded-lg text-lg min-w-10 py-0.5 px-2 font-mono ${
-                        analysis.metrics.grade === "F"
-                          ? "bg-red-100 text-red-700"
-                          : analysis.metrics.grade === "C"
-                          ? "bg-amber-100 text-amber-700"
-                          : "bg-emerald-100 text-emerald-700"
-                      }`}
-                    >
+                    <div className={`grade-badge ${gradeClass(analysis.metrics.grade)}`}>
                       {analysis.metrics.grade}
                     </div>
                   </div>
-
-                  <div className="mt-4 flex flex-wrap gap-2 items-center">
-                    {analysis.metrics.encroachment_alert ? (
-                      <span className="alert-pulse inline-flex items-center bg-red-100 text-red-800 text-[9px] font-bold px-2.5 py-1 rounded-full border border-red-200 uppercase tracking-widest font-mono">
-                        Encroachment Alert Active
-                      </span>
+                  <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {(analysis.metrics.grade === "F" || analysis.metrics.grade === "C") ? (
+                      <span className="badge-alert"><span className="dot-pulse red" />Encroachment Alert</span>
                     ) : (
-                      <span className="stable-pulse inline-flex items-center bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2.5 py-1 rounded-full border border-emerald-200 uppercase tracking-widest font-mono">
-                        Buffer Zone Stable
-                      </span>
+                      <span className="badge-stable"><span className="dot-pulse emerald" />Buffer Stable</span>
                     )}
-
-                    <span className="bg-slate-100 text-slate-700 text-[9px] font-bold px-2.5 py-1 rounded-full border border-slate-200 uppercase tracking-widest font-mono">
-                      Period: {beforeYear} to {afterYear}
-                    </span>
+                    <span className="badge-neutral">{beforeYear} → {afterYear}</span>
+                    <span className="badge-neutral">{analysis.metrics.label}</span>
                   </div>
                 </div>
 
-                {/* Key indicators layout */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="border border-slate-200 rounded-xl p-4">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block font-mono">
+                {/* KPI cards */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div className="metric-card">
+                    <span className="section-label" style={{ display: "block", marginBottom: 6 }}>
                       ABI Ratio ({afterYear})
                     </span>
-                    <span className="text-xl font-bold text-slate-900 block mt-1 font-mono">
-                      {analysis.metrics.latest_abi.toFixed(3)}
-                    </span>
-                    <span className="text-[10px] text-slate-400 mt-1 block font-mono">
-                      Warning: &lt;0.5 • Critical: &lt;0.3
-                    </span>
+                    <span style={{
+                      display: "block", fontSize: 22, fontWeight: 900, fontFamily: "monospace",
+                      letterSpacing: "-0.02em",
+                      color: analysis.metrics.latest_abi < 0.3 ? "var(--red-400)"
+                        : analysis.metrics.latest_abi < 0.5 ? "var(--amber-400)" : "var(--emerald-400)",
+                    }}>{analysis.metrics.latest_abi.toFixed(3)}</span>
+                    <span style={{ fontSize: 9, fontFamily: "monospace", color: "var(--text-muted)" }}>warn &lt;0.5 · critical &lt;0.3</span>
                   </div>
 
-                  <div className="border border-slate-200 rounded-xl p-4">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block font-mono">
-                      Cropland Loss
+                  <div className="metric-card">
+                    <span className="section-label" style={{ display: "block", marginBottom: 6 }}>Cropland Lost</span>
+                    <span style={{
+                      display: "block", fontSize: 22, fontWeight: 900, fontFamily: "monospace",
+                      color: "var(--red-400)", letterSpacing: "-0.02em",
+                    }}>
+                      {analysis.metrics.cropland_loss_ha.toLocaleString()}
+                      <span style={{ fontSize: 12 }}> ha</span>
                     </span>
-                    <span className="text-xl font-bold text-slate-900 block mt-1 text-red-600 font-mono">
-                      -{analysis.metrics.cropland_loss_ha.toFixed(1)} ha
-                    </span>
-                    <span className="text-[10px] text-slate-400 mt-1 block font-mono">
-                      Estimated loss since 2017
-                    </span>
+                    <span style={{ fontSize: 9, fontFamily: "monospace", color: "var(--text-muted)" }}>est. since 2017</span>
                   </div>
 
-                  <div className="border border-slate-200 rounded-xl p-4 col-span-2">
-                    <div className="flex justify-between items-center">
+                  <div className="metric-card" style={{ gridColumn: "1 / -1" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div>
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block font-mono">
+                        <span className="section-label" style={{ display: "block", marginBottom: 3 }}>
                           Buffer Change ({beforeYear} vs {afterYear})
                         </span>
-                        <span className="text-sm font-bold text-slate-950 mt-1 block font-mono uppercase">
+                        <span style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-secondary)", fontWeight: 600 }}>
                           Overall ABI Shift
                         </span>
                       </div>
-                      <div
-                        className={`text-base font-bold font-mono ${
-                          analysis.comparison.abi_change_pct < 0 ? "text-red-600" : "text-emerald-600"
-                        }`}
-                      >
+                      <span style={{
+                        fontSize: 20, fontWeight: 900, fontFamily: "monospace",
+                        color: analysis.comparison.abi_change_pct < 0 ? "var(--red-400)" : "var(--emerald-400)",
+                      }}>
                         {analysis.comparison.abi_change_pct > 0 ? "+" : ""}
                         {analysis.comparison.abi_change_pct}%
-                      </div>
+                      </span>
                     </div>
                   </div>
                 </div>
 
                 {/* Description */}
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs leading-relaxed text-slate-600 italic">
+                <div className="glass-card" style={{ padding: "10px 14px", fontSize: 11, lineHeight: 1.7, color: "var(--text-secondary)", fontStyle: "italic" }}>
                   &ldquo;{analysis.metrics.description}&rdquo;
                 </div>
 
-                {/* Trend Chart */}
-                <div className="border border-slate-200 rounded-xl p-4">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block font-mono">
+                {/* Trend chart */}
+                <div className="glass-card" style={{ padding: "12px 14px" }}>
+                  <span className="section-label" style={{ display: "block", marginBottom: 8 }}>
                     ABI Ratio Trend Timeline
                   </span>
-                  {renderLineChart()}
+                  <LineChart data={analysis.timeseries} beforeYear={beforeYear} afterYear={afterYear} />
                 </div>
 
-                {/* Class Shift Metrics Table */}
-                <div className="border border-slate-200 rounded-xl overflow-hidden">
-                  <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest font-mono">
-                      Land Cover Shifts (%)
-                    </span>
-                    <span className="text-[9px] font-bold text-slate-500 font-mono">
-                      {beforeYear} vs {afterYear}
-                    </span>
+                {/* Land cover transitions */}
+                <div className="glass-card" style={{ overflow: "hidden" }}>
+                  <div style={{
+                    padding: "10px 14px", borderBottom: "1px solid var(--border-dim)",
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                  }}>
+                    <span className="section-label">Land Cover Shifts</span>
+                    <span className="section-label">{beforeYear} vs {afterYear}</span>
                   </div>
-                  <div className="divide-y divide-slate-100">
-                    {analysis.transitions.map((trans) => (
-                      <div key={trans.class_name} className="px-4 py-3 flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className={`w-2.5 h-2.5 rounded-xs ${classColors[trans.class_name] || "bg-slate-400"}`} />
-                          <span className="font-semibold text-slate-700">{trans.class_name}</span>
-                        </div>
-                        <div className="flex items-center gap-6">
-                          <span className="font-mono text-slate-400">{trans.before_pct.toFixed(1)}%</span>
-                          <span className="font-mono text-slate-400">→</span>
-                          <span className="font-mono text-slate-900 font-semibold">{trans.after_pct.toFixed(1)}%</span>
-                          <span
-                            className={`font-mono font-bold w-12 text-right ${
-                              trans.trend_shift_pct > 0.05
-                                ? "text-emerald-600"
-                                : trans.trend_shift_pct < -0.05
-                                ? "text-red-600"
-                                : "text-slate-400"
-                            }`}
-                          >
-                            {trans.trend_shift_pct > 0 ? "+" : ""}
-                            {trans.trend_shift_pct.toFixed(1)}%
-                          </span>
-                        </div>
+                  {analysis.transitions.map(t => (
+                    <div key={t.class_name} className="transition-row">
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+                        <span style={{
+                          width: 8, height: 8, borderRadius: 2, flexShrink: 0,
+                          background: CLASS_COLORS[t.class_name] || "#475569",
+                        }} />
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, color: "var(--text-primary)",
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        }}>{t.class_name}</span>
                       </div>
-                    ))}
-                  </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, fontFamily: "monospace", flexShrink: 0 }}>
+                        <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{t.before_pct.toFixed(1)}%</span>
+                        <span style={{ fontSize: 9, color: "var(--text-label)" }}>→</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-primary)" }}>{t.after_pct.toFixed(1)}%</span>
+                        <span style={{
+                          fontSize: 10, fontWeight: 800, minWidth: 40, textAlign: "right",
+                          color: t.trend_shift_pct > 0.1 ? "var(--emerald-400)"
+                            : t.trend_shift_pct < -0.1 ? "var(--red-400)"
+                            : "var(--text-muted)",
+                        }}>
+                          {t.trend_shift_pct > 0 ? "+" : ""}{t.trend_shift_pct.toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
+
+                <div style={{ height: 8 }} />
               </div>
             ) : null}
           </div>

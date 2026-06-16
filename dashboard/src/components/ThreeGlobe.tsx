@@ -1,4 +1,5 @@
 "use client";
+// Three.js r184 compatible
 
 import React, { useEffect, useRef } from "react";
 import * as THREE from "three";
@@ -22,492 +23,531 @@ interface ThreeGlobeProps {
   onSelectZone: (key: string) => void;
 }
 
+// Map geo-coordinates to scene 3D space
+// Longitude [68, 90] -> X [-5.5, 5.5]
+// Latitude [8, 26] -> Z [4.5, -4.5]
+const LON_MIN = 68, LON_MAX = 90;
+const LAT_MIN = 8, LAT_MAX = 26;
+const SCENE_W = 11;
+const SCENE_H = 9;
+
+function mapLon(lon: number): number {
+  return ((lon - LON_MIN) / (LON_MAX - LON_MIN) - 0.5) * SCENE_W;
+}
+
+function mapLat(lat: number): number {
+  return -((lat - LAT_MIN) / (LAT_MAX - LAT_MIN) - 0.5) * SCENE_H;
+}
+
+function lerpColor(a: number, b: number, t: number): number {
+  const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff;
+  const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
+  const r = Math.round(ar + (br - ar) * t);
+  const g = Math.round(ag + (bg - ag) * t);
+  const bv = Math.round(ab + (bb - ab) * t);
+  return (r << 16) | (g << 8) | bv;
+}
+
 export default function ThreeGlobe({ zones, selectedZoneKey, onSelectZone }: ThreeGlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const selectedZoneRef = useRef<string | null>(selectedZoneKey);
-  const pinsGroupRef = useRef<THREE.Group | null>(null);
-  const controlsRef = useRef<OrbitControls | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
+  const pinMeshes = useRef<THREE.Mesh[]>([]);
+  const pinToZone = useRef<Map<THREE.Mesh, string>>(new Map());
+  const selectedRef = useRef<string | null>(selectedZoneKey);
 
-  // Maintain ref to track selected zone without re-triggering base effect
+  // Camera animation on selection change
   useEffect(() => {
-    selectedZoneRef.current = selectedZoneKey;
-    if (selectedZoneKey && cameraRef.current && controlsRef.current) {
-      const zone = zones.find((z) => z.key === selectedZoneKey);
+    selectedRef.current = selectedZoneKey;
+    if (!cameraRef.current || !controlsRef.current) return;
+
+    const cam = cameraRef.current;
+    const ctrl = controlsRef.current;
+
+    let targetCam: THREE.Vector3;
+    let targetLook: THREE.Vector3;
+
+    if (selectedZoneKey) {
+      const zone = zones.find(z => z.key === selectedZoneKey);
       if (zone) {
         const [lat, lon] = zone.center;
-        const R = 5;
-        const phi = (90 - lat) * (Math.PI / 180);
-        const theta = (lon + 180) * (Math.PI / 180);
-        
-        const targetX = -R * Math.sin(phi) * Math.sin(theta);
-        const targetY = R * Math.cos(phi);
-        const targetZ = R * Math.sin(phi) * Math.cos(theta);
-
-        const zoomFactor = 2.0;
-        const camX = targetX * zoomFactor;
-        const camY = targetY * zoomFactor;
-        const camZ = targetZ * zoomFactor;
-
-        const duration = 1200;
-        const startCam = cameraRef.current.position.clone();
-        const startTarget = controlsRef.current.target.clone();
-        const endTarget = new THREE.Vector3(targetX, targetY, targetZ);
-        const endCam = new THREE.Vector3(camX, camY, camZ);
-        
-        const startTime = performance.now();
-        
-        const animateZoom = (now: number) => {
-          const elapsed = now - startTime;
-          const progress = Math.min(elapsed / duration, 1);
-          const ease = 1 - Math.pow(1 - progress, 3); // Ease out cubic
-          
-          if (cameraRef.current && controlsRef.current) {
-            cameraRef.current.position.lerpVectors(startCam, endCam, ease);
-            controlsRef.current.target.lerpVectors(startTarget, endTarget, ease);
-            controlsRef.current.update();
-            
-            if (progress < 1) {
-              requestAnimationFrame(animateZoom);
-            }
-          }
-        };
-        
-        requestAnimationFrame(animateZoom);
+        const x = mapLon(lon);
+        const z = mapLat(lat);
+        targetCam = new THREE.Vector3(x, 5.5, z + 5);
+        targetLook = new THREE.Vector3(x, 0, z);
+      } else {
+        return;
       }
+    } else {
+      targetCam = new THREE.Vector3(0, 8, 10);
+      targetLook = new THREE.Vector3(0, 0, 0);
     }
+
+    const startCam = cam.position.clone();
+    const startLook = ctrl.target.clone();
+    const duration = 900;
+    const t0 = performance.now();
+
+    const animateCamera = (now: number) => {
+      const progress = Math.min((now - t0) / duration, 1);
+      const ease = 1 - Math.pow(1 - progress, 3);
+      cam.position.lerpVectors(startCam, targetCam, ease);
+      ctrl.target.lerpVectors(startLook, targetLook, ease);
+      ctrl.update();
+      if (progress < 1) requestAnimationFrame(animateCamera);
+    };
+
+    requestAnimationFrame(animateCamera);
   }, [selectedZoneKey, zones]);
 
   useEffect(() => {
     if (!containerRef.current) return;
+    const el = containerRef.current;
+    const rect = el.getBoundingClientRect();
+    const W = rect.width || 720;
+    const H = rect.height || 520;
 
-    // Use parent bounding rect to avoid 0px initialization bug
-    const rect = containerRef.current.getBoundingClientRect();
-    const width = rect.width || 500;
-    const height = rect.height || 450;
-
-    // Scene
+    // =========================================================
+    // SCENE SETUP
+    // =========================================================
     const scene = new THREE.Scene();
     scene.background = null;
+    scene.fog = new THREE.FogExp2(0x050c14, 0.03);
 
-    // Camera
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
-    camera.position.set(0, 4, 11);
+    const camera = new THREE.PerspectiveCamera(38, W / H, 0.1, 200);
+    camera.position.set(0, 8, 10);
     cameraRef.current = camera;
 
-    // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(width, height);
+    renderer.setSize(W, H);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    containerRef.current.appendChild(renderer.domElement);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    el.appendChild(renderer.domElement);
 
-    // Controls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.rotateSpeed = 0.7;
-    controls.minDistance = 6.0;
-    controls.maxDistance = 15;
+    controls.dampingFactor = 0.04;
+    controls.rotateSpeed = 0.45;
+    controls.minDistance = 4;
+    controls.maxDistance = 18;
+    controls.maxPolarAngle = Math.PI / 2.15;
     controls.enablePan = false;
     controlsRef.current = controls;
 
-    // Main Group
-    const globeGroup = new THREE.Group();
-    scene.add(globeGroup);
+    // =========================================================
+    // BASE PLATFORM — a dark angled terrain slab
+    // =========================================================
+    const baseGeo = new THREE.BoxGeometry(SCENE_W + 2, 0.25, SCENE_H + 2);
+    const baseMat = new THREE.MeshStandardMaterial({
+      color: 0x050c14,
+      roughness: 0.7,
+      metalness: 0.3,
+    });
+    const baseMesh = new THREE.Mesh(baseGeo, baseMat);
+    baseMesh.position.y = -0.125;
+    baseMesh.receiveShadow = true;
+    scene.add(baseMesh);
 
-    const R = 5;
+    // =========================================================
+    // PROCEDURAL TERRAIN TEXTURE for the map surface
+    // =========================================================
+    const texSize = 1024;
+    const terrainCanvas = document.createElement("canvas");
+    terrainCanvas.width = texSize;
+    terrainCanvas.height = texSize;
+    const tc = terrainCanvas.getContext("2d")!;
 
-    // --- PROCEDURAL WORLD TEXTURE GENERATION ---
-    const generateDottedMapTexture = (): THREE.CanvasTexture => {
-      const texWidth = 1024;
-      const texHeight = 512;
+    // Dark deep-ocean base
+    tc.fillStyle = "#050c14";
+    tc.fillRect(0, 0, texSize, texSize);
 
-      const tempCanvas = document.createElement("canvas");
-      tempCanvas.width = texWidth;
-      tempCanvas.height = texHeight;
-      const tempCtx = tempCanvas.getContext("2d");
-      if (!tempCtx) return new THREE.CanvasTexture(tempCanvas);
+    // Grid overlay — thin emerald lines
+    tc.strokeStyle = "rgba(5,150,105,0.1)";
+    tc.lineWidth = 0.8;
+    const gridDivs = 22;
+    for (let i = 0; i <= gridDivs; i++) {
+      const x = (i / gridDivs) * texSize;
+      const y = (i / gridDivs) * texSize;
+      tc.beginPath(); tc.moveTo(x, 0); tc.lineTo(x, texSize); tc.stroke();
+      tc.beginPath(); tc.moveTo(0, y); tc.lineTo(texSize, y); tc.stroke();
+    }
 
-      const mapLon = (lon: number) => ((lon + 180) / 360) * texWidth;
-      const mapLat = (lat: number) => ((90 - lat) / 180) * texHeight;
+    // India-ish coastline silhouette — simplified polygon fill
+    const indiaPolygon = [
+      [68.5, 23.5], [69.5, 22.5], [70.2, 20.8], [72.0, 19.5],
+      [72.5, 18.0], [72.8, 16.2], [73.5, 14.8], [74.3, 12.8],
+      [75.0, 10.8], [77.0, 8.5], [78.5, 9.0], [79.5, 12.0],
+      [80.0, 13.5], [80.1, 15.8], [81.5, 17.2], [83.0, 18.0],
+      [85.0, 19.5], [87.0, 21.5], [88.5, 22.0], [87.5, 24.0],
+      [84.0, 25.5], [79.0, 26.0], [74.0, 25.8], [71.0, 25.0],
+      [68.5, 23.5],
+    ];
 
-      // Fill Ocean Base (Black)
-      tempCtx.fillStyle = "#000000";
-      tempCtx.fillRect(0, 0, texWidth, texHeight);
-
-      // Draw Land (White)
-      tempCtx.fillStyle = "#ffffff";
-      
-      const drawPolygon = (pts: number[][]) => {
-        tempCtx.beginPath();
-        pts.forEach(([lon, lat], idx) => {
-          const x = mapLon(lon);
-          const y = mapLat(lat);
-          if (idx === 0) tempCtx.moveTo(x, y);
-          else tempCtx.lineTo(x, y);
-        });
-        tempCtx.closePath();
-        tempCtx.fill();
-      };
-
-      // Simplified global continents polygons
-      const landPolygons = [
-        // North America
-        [[-168, 65], [-120, 70], [-60, 75], [-50, 50], [-80, 25], [-100, 15], [-105, 20], [-90, 15], [-80, 8]],
-        // South America
-        [[-80, 10], [-40, -10], [-35, -5], [-70, -55], [-75, -45]],
-        // Africa
-        [[-17, 15], [15, 30], [30, 30], [50, 10], [40, -30], [20, -35], [10, -10]],
-        // Europe & Asia (Eurasia)
-        [[-10, 60], [30, 70], [60, 75], [120, 75], [170, 65], [140, 35], [120, 10], [80, 10], [45, 15], [35, 30], [10, 35]],
-        // India detailed polygon
-        [[68, 24], [72, 31], [78, 31], [88, 22], [82, 10], [77, 8], [72, 12]],
-        // Australia
-        [[113, -25], [150, -15], [150, -35], [115, -35]],
-        // Greenland
-        [[-60, 80], [-30, 75], [-40, 60], [-55, 60]]
-      ];
-
-      landPolygons.forEach(drawPolygon);
-
-      // Render dots onto output canvas
-      const mainCanvas = document.createElement("canvas");
-      mainCanvas.width = texWidth;
-      mainCanvas.height = texHeight;
-      const ctx = mainCanvas.getContext("2d");
-      if (!ctx) return new THREE.CanvasTexture(mainCanvas);
-
-      ctx.clearRect(0, 0, texWidth, texHeight);
-
-      const imgData = tempCtx.getImageData(0, 0, texWidth, texHeight);
-      const pixels = imgData.data;
-
-      const dotSpacing = 8;
-      ctx.fillStyle = "#059669"; // Emerald 600
-
-      for (let y = 0; y < texHeight; y += dotSpacing) {
-        for (let x = 0; x < texWidth; x += dotSpacing) {
-          const index = (y * texWidth + x) * 4;
-          if (pixels[index] > 200) {
-            ctx.beginPath();
-            ctx.arc(x, y, 1.8, 0, Math.PI * 2);
-            ctx.fill();
-          }
-        }
-      }
-
-      const canvasTexture = new THREE.CanvasTexture(mainCanvas);
-      canvasTexture.wrapS = THREE.RepeatWrapping;
-      canvasTexture.wrapT = THREE.ClampToEdgeWrapping;
-      return canvasTexture;
+    const toTex = (lon: number, lat: number): [number, number] => {
+      const px = ((lon - LON_MIN) / (LON_MAX - LON_MIN)) * texSize;
+      const py = (1 - (lat - LAT_MIN) / (LAT_MAX - LAT_MIN)) * texSize;
+      return [px, py];
     };
 
-    // --- GLOBE SPHERES ---
-    // 1. Dotted Continent Shell (Outer sphere)
-    const mapTexture = generateDottedMapTexture();
-    const outerGeo = new THREE.SphereGeometry(R, 64, 64);
-    const outerMat = new THREE.MeshPhongMaterial({
-      map: mapTexture,
-      transparent: true,
-      opacity: 0.85,
-      color: 0xffffff,
-      side: THREE.DoubleSide,
-      depthWrite: true,
-      shininess: 10,
+    // Land mass fill
+    tc.beginPath();
+    indiaPolygon.forEach(([lon, lat], i) => {
+      const [px, py] = toTex(lon, lat);
+      if (i === 0) tc.moveTo(px, py);
+      else tc.lineTo(px, py);
     });
-    const outerShell = new THREE.Mesh(outerGeo, outerMat);
-    globeGroup.add(outerShell);
+    tc.closePath();
 
-    // 2. Liquid Frosted Glass Water Core (Inner sphere)
-    const innerGeo = new THREE.SphereGeometry(R - 0.04, 64, 64);
-    const innerMat = new THREE.MeshPhysicalMaterial({
-      color: 0xf1f5f9, // Light Slate 100
-      roughness: 0.15,
-      metalness: 0.05,
-      transparent: true,
-      opacity: 0.75,
-      transmission: 0.9,
-      thickness: 1.5,
-      ior: 1.45,
+    const landGrad = tc.createLinearGradient(0, 0, texSize, texSize);
+    landGrad.addColorStop(0, "rgba(8,22,44,0.95)");
+    landGrad.addColorStop(0.5, "rgba(10,26,50,0.9)");
+    landGrad.addColorStop(1, "rgba(6,18,38,0.95)");
+    tc.fillStyle = landGrad;
+    tc.fill();
+
+    // Land border glow
+    tc.strokeStyle = "rgba(5,150,105,0.35)";
+    tc.lineWidth = 2.5;
+    tc.stroke();
+
+    // State border approximations — subtle lines
+    const stateLines = [
+      [[73, 15.5], [76, 12.5]], // Karnataka coast
+      [[76, 20], [80, 22]], // Telangana north
+      [[74, 17], [77, 19]], // Maharashtra-Goa
+    ] as [number, number][][];
+
+    tc.strokeStyle = "rgba(51,90,130,0.25)";
+    tc.lineWidth = 1;
+    stateLines.forEach(pts => {
+      tc.beginPath();
+      pts.forEach(([lon, lat], i) => {
+        const [px, py] = toTex(lon, lat);
+        if (i === 0) tc.moveTo(px, py);
+        else tc.lineTo(px, py);
+      });
+      tc.stroke();
     });
-    const innerSphere = new THREE.Mesh(innerGeo, innerMat);
-    globeGroup.add(innerSphere);
 
-    // 3. Holographic grid outline (translucent)
-    const gridGeo = new THREE.SphereGeometry(R + 0.02, 30, 15);
-    const gridMat = new THREE.MeshBasicMaterial({
-      color: 0x94a3b8, // Slate 400
-      wireframe: true,
+    // Coordinate labels on texture
+    tc.fillStyle = "rgba(51,90,130,0.6)";
+    tc.font = "bold 11px monospace";
+    for (let lon = 70; lon <= 88; lon += 4) {
+      const [px] = toTex(lon, LAT_MIN + 1.5);
+      tc.fillText(`${lon}°E`, px - 12, texSize - 14);
+    }
+    for (let lat = 10; lat <= 24; lat += 4) {
+      const [, py] = toTex(LON_MIN + 0.5, lat);
+      tc.fillText(`${lat}°N`, 6, py + 4);
+    }
+
+    const terrainTex = new THREE.CanvasTexture(terrainCanvas);
+
+    // Map surface plane
+    const mapGeo = new THREE.PlaneGeometry(SCENE_W, SCENE_H, 1, 1);
+    const mapMat = new THREE.MeshStandardMaterial({
+      map: terrainTex,
+      roughness: 0.85,
+      metalness: 0.1,
       transparent: true,
-      opacity: 0.06,
+      opacity: 0.95,
     });
-    const gridMesh = new THREE.Mesh(gridGeo, gridMat);
-    globeGroup.add(gridMesh);
+    const mapMesh = new THREE.Mesh(mapGeo, mapMat);
+    mapMesh.rotation.x = -Math.PI / 2;
+    mapMesh.position.y = 0.01;
+    mapMesh.receiveShadow = true;
+    scene.add(mapMesh);
 
-    // 4. Subtle orbital data ring
-    const orbitRingGeo = new THREE.RingGeometry(R + 1.0, R + 1.04, 64);
-    const orbitRingMat = new THREE.MeshBasicMaterial({
+    // =========================================================
+    // INDIA OUTLINE — glowing 3D line on surface
+    // =========================================================
+    const outlinePoints3D = indiaPolygon.map(([lon, lat]) =>
+      new THREE.Vector3(mapLon(lon), 0.04, mapLat(lat))
+    );
+    const outlineCurve = new THREE.CatmullRomCurve3(outlinePoints3D, true);
+    const outlinePts = outlineCurve.getPoints(120);
+    const outlineGeo = new THREE.BufferGeometry().setFromPoints(outlinePts);
+    const outlineMat = new THREE.LineBasicMaterial({
       color: 0x059669,
-      side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.08,
+      opacity: 0.5,
     });
-    const orbitRing = new THREE.Mesh(orbitRingGeo, orbitRingMat);
-    orbitRing.rotation.x = Math.PI / 2.2;
-    globeGroup.add(orbitRing);
+    scene.add(new THREE.Line(outlineGeo, outlineMat));
 
-    // --- PINS & LABELS ---
-    const pinsGroup = new THREE.Group();
-    globeGroup.add(pinsGroup);
-    pinsGroupRef.current = pinsGroup;
+    // =========================================================
+    // DATA STREAM LINES between zones (arched bezier)
+    // =========================================================
+    const hqZone = zones.find(z => z.key === "bengaluru");
+    if (hqZone) {
+      const [hqLat, hqLon] = hqZone.center;
+      const hqPos = new THREE.Vector3(mapLon(hqLon), 0.06, mapLat(hqLat));
 
-    const pinObjects: THREE.Object3D[] = [];
-    const pinToZoneMap = new Map<THREE.Object3D, string>();
+      zones.filter(z => z.key !== "bengaluru").forEach(zone => {
+        const [lat, lon] = zone.center;
+        const endPos = new THREE.Vector3(mapLon(lon), 0.06, mapLat(lat));
+        const mid = new THREE.Vector3().addVectors(hqPos, endPos).multiplyScalar(0.5);
+        mid.y = hqPos.distanceTo(endPos) * 0.22;
 
-    // Billboard Text Label Creator
-    const createLabelSprite = (text: string) => {
-      const labelCanvas = document.createElement("canvas");
-      labelCanvas.width = 180;
-      labelCanvas.height = 48;
-      const lCtx = labelCanvas.getContext("2d");
-      if (lCtx) {
-        // Rounded card background
-        lCtx.fillStyle = "rgba(15, 23, 42, 0.82)"; // Slate 900
-        lCtx.beginPath();
-        lCtx.roundRect(0, 0, 180, 36, 6);
-        lCtx.fill();
-
-        // Label text
-        lCtx.fillStyle = "#ffffff";
-        lCtx.font = "bold 11px system-ui, -apple-system, sans-serif";
-        lCtx.textAlign = "center";
-        lCtx.textBaseline = "middle";
-        lCtx.fillText(text, 90, 18);
-      }
-
-      const tex = new THREE.CanvasTexture(labelCanvas);
-      const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
-      const sprite = new THREE.Sprite(spriteMat);
-      sprite.scale.set(1.1, 0.3, 1);
-      return sprite;
-    };
-
-    const convertLatLngToVector3 = (lat: number, lon: number, radius: number) => {
-      const phi = (90 - lat) * (Math.PI / 180);
-      const theta = (lon + 180) * (Math.PI / 180);
-      return new THREE.Vector3(
-        -radius * Math.sin(phi) * Math.sin(theta),
-        radius * Math.cos(phi),
-        radius * Math.sin(phi) * Math.cos(theta)
-      );
-    };
-
-    zones.forEach((zone) => {
-      const [lat, lon] = zone.center;
-      const pinPos = convertLatLngToVector3(lat, lon, R);
-
-      const pinAnchor = new THREE.Group();
-      pinAnchor.position.copy(pinPos);
-
-      // Point pin outward from sphere center
-      const pinDirection = pinPos.clone().normalize();
-      const up = new THREE.Vector3(0, 1, 0);
-      const quaternion = new THREE.Quaternion().setFromUnitVectors(up, pinDirection);
-      pinAnchor.quaternion.copy(quaternion);
-
-      const pinColor = zone.encroachment_alert ? 0xdc2626 : 0x059669;
-
-      // Needle Cone pointing to sphere
-      const coneGeo = new THREE.ConeGeometry(0.1, 0.4, 8);
-      coneGeo.translate(0, 0.2, 0);
-      const coneMat = new THREE.MeshPhongMaterial({
-        color: pinColor,
-        emissive: pinColor,
-        emissiveIntensity: 0.4,
-        shininess: 90,
-      });
-      const cone = new THREE.Mesh(coneGeo, coneMat);
-      cone.rotation.x = Math.PI;
-      pinAnchor.add(cone);
-
-      // Pulsing Base Ring
-      const ringGeo = new THREE.RingGeometry(0.14, 0.2, 16);
-      const ringMat = new THREE.MeshBasicMaterial({
-        color: pinColor,
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.8,
-      });
-      const baseRing = new THREE.Mesh(ringGeo, ringMat);
-      baseRing.rotation.x = Math.PI / 2;
-      pinAnchor.add(baseRing);
-
-      baseRing.userData = { scaleProgress: 0.0, baseOpacity: 0.8 };
-
-      pinsGroup.add(pinAnchor);
-      pinObjects.push(cone);
-      pinToZoneMap.set(cone, zone.key);
-
-      // Floating billboard label above the pin
-      const labelText = zone.name
-        .replace(" Agricultural Zone", "")
-        .replace(" Peripheral", "")
-        .replace(" Farmland", "")
-        .replace(" Agricultural Buffer Zone", "");
-      const labelSprite = createLabelSprite(labelText);
-      labelSprite.position.set(pinPos.x * 1.12, pinPos.y * 1.12, pinPos.z * 1.12);
-      scene.add(labelSprite); // added directly to scene so rotation of globe doesn't warp text orientation
-      
-      // Keep reference to labelSprite on pinGroup to update position during rotation
-      pinAnchor.userData = { labelSprite, pinPos };
-    });
-
-    // --- CURVED DATA FLOW ARCS ---
-    // Render curved flow lines connecting Bengaluru (HQ) to other active farmlands
-    const bengaluruZone = zones.find((z) => z.key === "bengaluru");
-    if (bengaluruZone) {
-      const [bLat, bLon] = bengaluruZone.center;
-      const startPos = convertLatLngToVector3(bLat, bLon, R);
-
-      zones.forEach((zone) => {
-        if (zone.key === "bengaluru") return;
-        const [zLat, zLon] = zone.center;
-        const endPos = convertLatLngToVector3(zLat, zLon, R);
-
-        // Arch control point calculation
-        const midPoint = new THREE.Vector3().addVectors(startPos, endPos).multiplyScalar(0.5);
-        const dist = startPos.distanceTo(endPos);
-        const norm = new THREE.Vector3().addVectors(startPos, endPos).normalize();
-        midPoint.add(norm.multiplyScalar(dist * 0.2)); // arch height factor
-
-        const curve = new THREE.QuadraticBezierCurve3(startPos, endPos, midPoint);
-        const curvePoints = curve.getPoints(24);
-        const arcGeo = new THREE.BufferGeometry().setFromPoints(curvePoints);
-        const arcMat = new THREE.LineBasicMaterial({
-          color: 0x94a3b8, // Slate 400
+        const streamCurve = new THREE.QuadraticBezierCurve3(hqPos, mid, endPos);
+        const streamPts = streamCurve.getPoints(48);
+        const streamGeo = new THREE.BufferGeometry().setFromPoints(streamPts);
+        const streamMat = new THREE.LineBasicMaterial({
+          color: (zone.latest_grade === "F" || zone.latest_grade === "C") ? 0xdc2626 : 0x059669,
           transparent: true,
-          opacity: 0.22,
+          opacity: 0.18,
         });
-        const arcLine = new THREE.Line(arcGeo, arcMat);
-        globeGroup.add(arcLine);
+        scene.add(new THREE.Line(streamGeo, streamMat));
       });
     }
 
-    // --- LIGHTING ---
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
-    scene.add(ambientLight);
+    // =========================================================
+    // ZONE PINS
+    // =========================================================
+    const pins: THREE.Mesh[] = [];
+    const pinMap = new Map<THREE.Mesh, string>();
 
-    const sunLight = new THREE.DirectionalLight(0xffffff, 0.9);
-    sunLight.position.set(6, 12, 8);
-    scene.add(sunLight);
+    zones.forEach(zone => {
+      const [lat, lon] = zone.center;
+      const x = mapLon(lon);
+      const z = mapLat(lat);
+      const isHighRisk = zone.latest_grade === "F" || zone.latest_grade === "C";
+      const color = isHighRisk ? 0xdc2626 : 0x059669;
+      const emissive = isHighRisk ? 0xdc2626 : 0x059669;
 
-    const fillLight = new THREE.DirectionalLight(0x059669, 0.25);
-    fillLight.position.set(-6, -4, -6);
-    scene.add(fillLight);
+      // ---- Glow base disc ----
+      const discGeo = new THREE.CircleGeometry(0.4, 32);
+      const discMat = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.12,
+        side: THREE.DoubleSide,
+      });
+      const disc = new THREE.Mesh(discGeo, discMat);
+      disc.rotation.x = -Math.PI / 2;
+      disc.position.set(x, 0.015, z);
+      scene.add(disc);
 
-    // --- INTERACTION / RAYCASTING ---
+      // ---- Ring pulse ----
+      const ringGeo = new THREE.RingGeometry(0.25, 0.35, 32);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.7,
+        side: THREE.DoubleSide,
+      });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(x, 0.02, z);
+      ring.userData = { type: "ring", t: Math.random() * Math.PI * 2, zone: zone.key };
+      scene.add(ring);
+
+      // ---- Vertical column ----
+      const colH = isAlert ? 1.6 : 0.9;
+      const colGeo = new THREE.CylinderGeometry(0.06, 0.06, colH, 12);
+      const colMat = new THREE.MeshStandardMaterial({
+        color,
+        emissive,
+        emissiveIntensity: 0.55,
+        roughness: 0.3,
+        metalness: 0.6,
+        transparent: true,
+        opacity: 0.85,
+      });
+      const col = new THREE.Mesh(colGeo, colMat);
+      col.position.set(x, colH / 2 + 0.02, z);
+      col.castShadow = true;
+      scene.add(col);
+
+      // ---- Pin cap (hexagonal prism) ----
+      const capGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.08, 6);
+      const capMat = new THREE.MeshStandardMaterial({
+        color,
+        emissive,
+        emissiveIntensity: 0.8,
+        roughness: 0.2,
+        metalness: 0.8,
+      });
+      const cap = new THREE.Mesh(capGeo, capMat);
+      cap.position.set(x, colH + 0.07, z);
+      cap.castShadow = true;
+      scene.add(cap);
+
+      // Raycasting target = cap mesh
+      pins.push(cap);
+      pinMap.set(cap, zone.key);
+
+      // ---- Floating billboard label ----
+      const labelCanvas = document.createElement("canvas");
+      labelCanvas.width = 200;
+      labelCanvas.height = 56;
+      const lCtx = labelCanvas.getContext("2d")!;
+
+      // Background pill
+      lCtx.fillStyle = isAlert ? "rgba(220,38,38,0.92)" : "rgba(5,150,105,0.92)";
+      lCtx.beginPath();
+      lCtx.roundRect(0, 0, 200, 46, 8);
+      lCtx.fill();
+
+      // Border
+      lCtx.strokeStyle = isAlert ? "rgba(248,113,113,0.7)" : "rgba(52,211,153,0.7)";
+      lCtx.lineWidth = 1.5;
+      lCtx.beginPath();
+      lCtx.roundRect(1, 1, 198, 44, 8);
+      lCtx.stroke();
+
+      // Zone short name
+      const shortName = zone.name
+        .replace(" Agricultural Zone", "")
+        .replace(" Agricultural Buffer Zone", "")
+        .replace(" Peripheral", "")
+        .replace(" Farmland", "");
+      lCtx.fillStyle = "#ffffff";
+      lCtx.font = "bold 11px monospace";
+      lCtx.textAlign = "center";
+      lCtx.fillText(shortName.toUpperCase(), 100, 18);
+
+      // Grade
+      lCtx.fillStyle = "rgba(255,255,255,0.75)";
+      lCtx.font = "9px monospace";
+      lCtx.fillText(`Grade: ${zone.latest_grade}  ABI: ${zone.latest_abi.toFixed(2)}`, 100, 34);
+
+      const labelTex = new THREE.CanvasTexture(labelCanvas);
+      const labelMat = new THREE.SpriteMaterial({ map: labelTex, transparent: true });
+      const label = new THREE.Sprite(labelMat);
+      label.scale.set(1.5, 0.42, 1);
+      label.position.set(x, colH + 0.62, z);
+      label.userData = { baseY: colH + 0.62, phaseOffset: Math.random() * Math.PI * 2 };
+      scene.add(label);
+
+      disc.userData = { zone: zone.key };
+      col.userData = { zone: zone.key };
+    });
+
+    pinMeshes.current = pins;
+    pinToZone.current = pinMap;
+
+    // =========================================================
+    // LIGHTING
+    // =========================================================
+    // Ambient — very dim deep blue space light
+    const ambient = new THREE.AmbientLight(0x0a1628, 1.2);
+    scene.add(ambient);
+
+    // Primary sun directional — warm white top-right
+    const sun = new THREE.DirectionalLight(0xffffff, 1.1);
+    sun.position.set(6, 12, 6);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.far = 30;
+    scene.add(sun);
+
+    // Rim fill — cool blue from opposite side
+    const rimLight = new THREE.DirectionalLight(0x2563eb, 0.25);
+    rimLight.position.set(-6, 4, -6);
+    scene.add(rimLight);
+
+    // Emerald accent point (from below center)
+    const emeraldPt = new THREE.PointLight(0x059669, 0.6, 12);
+    emeraldPt.position.set(0, -1, 0);
+    scene.add(emeraldPt);
+
+    // =========================================================
+    // STARS (background particle system)
+    // =========================================================
+    const starCount = 600;
+    const starPositions = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount; i++) {
+      starPositions[i * 3 + 0] = (Math.random() - 0.5) * 80;
+      starPositions[i * 3 + 1] = Math.random() * 25 + 2;
+      starPositions[i * 3 + 2] = (Math.random() - 0.5) * 80;
+    }
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute("position", new THREE.BufferAttribute(starPositions, 3));
+    const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.05, transparent: true, opacity: 0.4 });
+    scene.add(new THREE.Points(starGeo, starMat));
+
+    // =========================================================
+    // RAYCASTER INTERACTION
+    // =========================================================
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
-    const handleCanvasClick = (event: MouseEvent) => {
+    const onClick = (e: MouseEvent) => {
       const bounds = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
-      mouse.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
-
+      mouse.x = ((e.clientX - bounds.left) / bounds.width) * 2 - 1;
+      mouse.y = -((e.clientY - bounds.top) / bounds.height) * 2 + 1;
       raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(pinObjects);
-
-      if (intersects.length > 0) {
-        const hit = intersects[0].object;
-        const key = pinToZoneMap.get(hit);
-        if (key) {
-          onSelectZone(key);
-        }
+      const hits = raycaster.intersectObjects(pinMeshes.current);
+      if (hits.length > 0) {
+        const key = pinToZone.current.get(hits[0].object as THREE.Mesh);
+        if (key) onSelectZone(key);
       }
     };
 
-    // Hover effect to change cursor to pointer
-    const handleMouseMove = (event: MouseEvent) => {
+    const onMouseMove = (e: MouseEvent) => {
       const bounds = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
-      mouse.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
-
+      mouse.x = ((e.clientX - bounds.left) / bounds.width) * 2 - 1;
+      mouse.y = -((e.clientY - bounds.top) / bounds.height) * 2 + 1;
       raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(pinObjects);
-
-      if (intersects.length > 0) {
-        renderer.domElement.style.cursor = "pointer";
-      } else {
-        renderer.domElement.style.cursor = "grab";
-      }
+      const hits = raycaster.intersectObjects(pinMeshes.current);
+      renderer.domElement.style.cursor = hits.length > 0 ? "pointer" : "grab";
     };
 
-    renderer.domElement.addEventListener("click", handleCanvasClick);
-    renderer.domElement.addEventListener("mousemove", handleMouseMove);
+    renderer.domElement.addEventListener("click", onClick);
+    renderer.domElement.addEventListener("mousemove", onMouseMove);
 
-    // Resize observer to prevent layout size initialization bug
-    const resizeObserver = new ResizeObserver((entries) => {
-      if (!entries || entries.length === 0) return;
-      const { width: w, height: h } = entries[0].contentRect;
+    // =========================================================
+    // RESIZE OBSERVER
+    // =========================================================
+    const resizer = new ResizeObserver(entries => {
+      const entry = entries[0];
+      if (!entry) return;
+      const { width: w, height: h } = entry.contentRect;
       if (w > 0 && h > 0) {
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
         renderer.setSize(w, h);
       }
     });
-    resizeObserver.observe(containerRef.current);
+    resizer.observe(el);
 
-    // --- ANIMATION LOOP ---
+    // =========================================================
+    // ANIMATION LOOP
+    // =========================================================
     let frameId: number;
-    const clock = new THREE.Clock();
+    let lastTime = performance.now();
+    let elapsed = 0;
 
     const animate = () => {
       frameId = requestAnimationFrame(animate);
 
-      const delta = clock.getDelta();
-      const time = clock.getElapsedTime();
+      const now = performance.now();
+      const delta = (now - lastTime) / 1000;
+      lastTime = now;
+      elapsed += delta;
 
-      // 1. Rotate globe
-      if (!selectedZoneRef.current) {
-        globeGroup.rotation.y += 0.04 * delta;
-      } else {
-        globeGroup.rotation.y += 0.004 * delta;
-      }
-
-      // 2. Animate pins & base rings
-      pinsGroup.children.forEach((pinAnchor) => {
-        // Animate pulsing base ring
-        const baseRing = pinAnchor.children[1] as THREE.Mesh;
-        if (baseRing) {
-          baseRing.userData.scaleProgress += 1.4 * delta;
-          if (baseRing.userData.scaleProgress > 1) {
-            baseRing.userData.scaleProgress = 0;
-          }
-          const s = 1.0 + baseRing.userData.scaleProgress * 1.6;
-          baseRing.scale.set(s, s, 1);
-          
-          const mat = baseRing.material as THREE.MeshBasicMaterial;
-          if (mat) {
-            mat.opacity = (1.0 - baseRing.userData.scaleProgress) * baseRing.userData.baseOpacity;
-          }
-        }
-
-        // Animate floating wobble on pin needle
-        const needle = pinAnchor.children[0] as THREE.Mesh;
-        if (needle) {
-          needle.position.y = 0.06 * Math.sin(time * 3 + needle.id);
-        }
-
-        // Project floating labels in sync with globe rotation
-        const labelSprite = pinAnchor.userData.labelSprite as THREE.Sprite;
-        const localPos = pinAnchor.userData.pinPos as THREE.Vector3;
-        if (labelSprite && localPos) {
-          // Compute world coordinates of pin after group rotations
-          const worldPos = localPos.clone().applyMatrix4(globeGroup.matrixWorld);
-          // Position label slightly further out from the rotated vector
-          labelSprite.position.copy(worldPos.multiplyScalar(1.12));
+      // Animate ring pulses
+      scene.children.forEach(obj => {
+        if (obj instanceof THREE.Mesh && obj.userData?.type === "ring") {
+          obj.userData.t += delta * 1.6;
+          const s = 1.0 + (obj.userData.t % 1.0) * 1.8;
+          obj.scale.set(s, s, 1);
+          (obj.material as THREE.MeshBasicMaterial).opacity =
+            0.7 * (1 - (obj.userData.t % 1.0));
         }
       });
+
+      // Animate label sprites float
+      scene.children.forEach(obj => {
+        if (obj instanceof THREE.Sprite && obj.userData?.baseY !== undefined) {
+          obj.position.y =
+            obj.userData.baseY + 0.07 * Math.sin(elapsed * 2.2 + obj.userData.phaseOffset);
+        }
+      });
+
+      // Gentle horizontal sway on whole scene
+      scene.rotation.y = 0.035 * Math.sin(elapsed * 0.12);
 
       controls.update();
       renderer.render(scene, camera);
@@ -517,34 +557,67 @@ export default function ThreeGlobe({ zones, selectedZoneKey, onSelectZone }: Thr
 
     return () => {
       cancelAnimationFrame(frameId);
-      resizeObserver.disconnect();
-      if (renderer.domElement) {
-        renderer.domElement.removeEventListener("click", handleCanvasClick);
-        renderer.domElement.removeEventListener("mousemove", handleMouseMove);
-        renderer.domElement.remove();
-      }
-      // Clean up labels added directly to scene
-      scene.children.forEach((child) => {
-        if (child instanceof THREE.Sprite) {
-          scene.remove(child);
-        }
-      });
+      resizer.disconnect();
+      renderer.domElement.removeEventListener("click", onClick);
+      renderer.domElement.removeEventListener("mousemove", onMouseMove);
+      renderer.domElement.remove();
       scene.clear();
       renderer.dispose();
     };
   }, [zones, onSelectZone]);
 
   return (
-    <div className="relative w-full h-full flex items-center justify-center">
-      {/* Visual Atmosphere backdrop gradient */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.7)_0%,rgba(248,250,252,0.9)_100%)] pointer-events-none" />
-      
-      {/* Canvas Mount */}
-      <div ref={containerRef} className="w-full h-full min-h-[380px] md:min-h-[460px] cursor-grab active:cursor-grabbing" />
+    <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+      {/* Scanline overlay */}
+      <div className="scanlines" />
 
-      {/* Desk widget instruction tag */}
-      <div className="absolute bottom-4 left-4 right-4 bg-white/70 backdrop-blur-xs border border-slate-200/60 px-4 py-2 rounded-lg text-center text-[10px] font-mono text-slate-500 uppercase tracking-widest pointer-events-none max-w-sm mx-auto shadow-xs">
-        Drag Earth • Scroll zoom • Click marker to audit
+      {/* Vignette */}
+      <div
+        className="absolute inset-0 pointer-events-none z-10"
+        style={{
+          background:
+            "radial-gradient(ellipse at center, transparent 50%, rgba(5,12,20,0.65) 100%)",
+        }}
+      />
+
+      {/* WebGL canvas */}
+      <div
+        ref={containerRef}
+        className="w-full h-full"
+        style={{ minHeight: 380 }}
+      />
+
+      {/* HUD overlay — top */}
+      <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none z-20">
+        <div className="glass-card px-3 py-1.5 flex items-center gap-2">
+          <span className="dot-pulse emerald" />
+          <span className="section-label" style={{ color: "var(--emerald-400)" }}>
+            Live Region Map
+          </span>
+        </div>
+        <div className="glass-card px-3 py-1.5">
+          <span className="section-label">
+            {zones.length} zones monitored
+          </span>
+        </div>
+      </div>
+
+      {/* HUD — bottom legend */}
+      <div className="absolute bottom-3 left-0 right-0 flex justify-center pointer-events-none z-20">
+        <div
+          className="glass-card px-4 py-2 flex items-center gap-5"
+          style={{ fontSize: 9, fontFamily: "monospace", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)" }}
+        >
+          <span className="flex items-center gap-1.5">
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: "#dc2626", display: "inline-block" }} />
+            Critical Alert
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: "#059669", display: "inline-block" }} />
+            Stable Zone
+          </span>
+          <span>Drag • Scroll Zoom • Click to Audit</span>
+        </div>
       </div>
     </div>
   );

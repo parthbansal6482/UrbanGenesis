@@ -5,16 +5,19 @@ import "./globals.css";
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
+  display: "swap",
 });
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "FarmGuard — Satyukt Farmland Encroachment System",
-  description: "Advanced environmental risk and farmland encroachment monitoring dashboard.",
+  title: "FarmGuard — Satyukt Farmland Encroachment Surveillance System",
+  description:
+    "Advanced satellite-powered farmland encroachment detection and environmental risk monitoring dashboard by Satyukt.",
 };
 
 export default function RootLayout({
@@ -23,10 +26,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="min-h-full bg-slate-50 text-slate-900 flex flex-col font-sans">
-        {children}
-      </body>
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable} h-full`}
+    >
+      <body className="h-full antialiased overflow-hidden">{children}</body>
     </html>
   );
 }
