@@ -380,7 +380,7 @@ export default function Home() {
           ? `/static/${selectedZoneKey}/ndvi_map_${beforeYear}.png` : null;
         const aNDVI = AFTER_YEARS_WITH_TRUE_COLOR.includes(afterYear)
           ? `/static/${selectedZoneKey}/ndvi_map_${afterYear}.png`  : null;
-        const MASK_YEARS = [2017, 2019, 2021, 2023, 2025];
+        const MASK_YEARS = [2017, 2019, 2021, 2023, 2025, 2027, 2029, 2031, 2033, 2035, 2037, 2039, 2041, 2043, 2045, 2047, 2049, 2051];
         const bMask = MASK_YEARS.includes(beforeYear)
           ? `/static/${selectedZoneKey}/mask_rgb_${beforeYear}.png` : null;
         const aMask = MASK_YEARS.includes(afterYear)
