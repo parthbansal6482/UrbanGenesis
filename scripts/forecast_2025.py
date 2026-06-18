@@ -185,15 +185,24 @@ def forecast_zone(zone_key, zone_cfg):
 
     # Calculate cropland loss between 2017 and 2025
     loss_ha = compute_cropland_loss_ha(masks[2017], forecast_mask, resolution_m=10.0)
+    
+    from analytics.encroachment import calculate_encroachment_stats, generate_encroachment_heatmap
+    encroachment_stats = calculate_encroachment_stats(masks[2017], forecast_mask, mapping_type="esri")
+    
+    # Save forecast encroachment heatmap
+    heatmap_arr = generate_encroachment_heatmap(masks[2017], forecast_mask, mapping_type="esri")
+    Image.fromarray(heatmap_arr).save(zone_dir / "encroachment_heatmap.png")
+    logger.info(f"  Saved encroachment heatmap to {zone_dir / 'encroachment_heatmap.png'}")
 
     # Re-run grader to generate final verdict summary
     new_verdict = generate_verdict(new_timeseries, zone_key, cropland_loss_ha=loss_ha)
+    new_verdict["encroachment"] = encroachment_stats
     
     verdict_path = zone_dir / "verdict.json"
     with open(verdict_path, "w") as f:
         json.dump(new_verdict, f, indent=2)
     
-    logger.info(f"  2025 Forecast Verdict: Grade {new_verdict['grade']} (ABI={new_verdict['abi']:.3f}, Crop Loss={loss_ha:.1f} ha)")
+    logger.info(f"  2025 Forecast Verdict: Grade {new_verdict['grade']} (ABI={new_verdict['abi']:.3f}, Crop Loss={loss_ha:.1f} ha, Cropland Encroachment={encroachment_stats['total_cropland_lost_ha']:.1f} ha)")
 
 if __name__ == "__main__":
     with open(CONFIG_PATH) as f:

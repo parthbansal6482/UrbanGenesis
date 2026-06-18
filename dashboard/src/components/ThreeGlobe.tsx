@@ -343,7 +343,7 @@ export default function ThreeGlobe({ zones, selectedZoneKey, onSelectZone }: Thr
       scene.add(ring);
 
       // ---- Vertical column ----
-      const colH = isAlert ? 1.6 : 0.9;
+      const colH = isHighRisk ? 1.6 : 0.9;
       const colGeo = new THREE.CylinderGeometry(0.06, 0.06, colH, 12);
       const colMat = new THREE.MeshStandardMaterial({
         color,
@@ -384,13 +384,13 @@ export default function ThreeGlobe({ zones, selectedZoneKey, onSelectZone }: Thr
       const lCtx = labelCanvas.getContext("2d")!;
 
       // Background pill
-      lCtx.fillStyle = isAlert ? "rgba(220,38,38,0.92)" : "rgba(5,150,105,0.92)";
+      lCtx.fillStyle = isHighRisk ? "rgba(220,38,38,0.92)" : "rgba(5,150,105,0.92)";
       lCtx.beginPath();
       lCtx.roundRect(0, 0, 200, 46, 8);
       lCtx.fill();
 
       // Border
-      lCtx.strokeStyle = isAlert ? "rgba(248,113,113,0.7)" : "rgba(52,211,153,0.7)";
+      lCtx.strokeStyle = isHighRisk ? "rgba(248,113,113,0.7)" : "rgba(52,211,153,0.7)";
       lCtx.lineWidth = 1.5;
       lCtx.beginPath();
       lCtx.roundRect(1, 1, 198, 44, 8);

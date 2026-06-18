@@ -22,7 +22,6 @@ FarmGuard/
 │   ├── change_detection.py    # Transition matrix engine
 │   └── grader.py              # Satyukt risk grader and encroachment flags
 ├── demo/
-│   ├── app.py                 # Gradio web application
 │   └── precomputed/           # Precomputed native-res assets for Satyukt zones (tracked)
 ├── scripts/
 │   └── fetch_esri_landcover.py # Main pipeline: fetch ESRI LULC + Sentinel-2 imagery
@@ -47,10 +46,16 @@ FarmGuard/
    ```
    *Available zones in config: `nashik_north`, `vijayawada_west`, `hubli_outskirts`, `bengaluru`*
 
-3. **Launch the Gradio Web App**:
+3. **Launch the FastAPI Backend**:
    ```bash
-   python demo/app.py
+   PYTHONPATH=. python app.py
    ```
+
+4. **Launch the Next.js Dashboard**:
+   ```bash
+   cd dashboard && npm run dev
+   ```
+   Open `http://localhost:3000` to view the encroachment dashboard.
 
 ## Testing
 Verify the analytics, ABI grading, and cropland loss codebase using `pytest`:
@@ -59,4 +64,4 @@ PYTHONPATH=. pytest tests/ -v
 ```
 
 ## Tech Stack
-rasterio · Gradio · Plotly · pystac-client · planetary-computer · numpy · Pillow
+FastAPI · Next.js · Leaflet · PyTorch · pystac-client · planetary-computer · numpy · Pillow

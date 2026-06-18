@@ -287,6 +287,81 @@ def analyse_zone(
     bbox = zone_cfg.get("bbox", [0.0, 0.0, 0.0, 0.0])
     center = [(bbox[1] + bbox[3]) / 2, (bbox[0] + bbox[2]) / 2]
 
+    # Calculate dynamic ABI change
+    before_abi = rec_before.get("abi", 0.0) if rec_before else 0.0
+    after_abi = rec_after.get("abi", 0.0) if rec_after else 0.0
+    abi_change_pct = 0.0
+    if before_abi > 0:
+        abi_change_pct = round(((after_abi - before_abi) / before_abi) * 100.0, 1)
+
+    # Dynamic grade assignment based on current Audited Year's ABI
+    from analytics.grader import assign_grade
+    grade_info = assign_grade(after_abi)
+    grade = grade_info.get("grade", "N/A")
+    label = grade_info.get("label", "")
+    description = grade_info.get("description", "")
+
+    # Check for encroachment alert dynamically
+    encroachment_alert = verdict.get("encroachment_alert", False)
+
+    # Dynamic encroachment stats and heatmap generation
+    encroachment_stats = {
+        "total_cropland_lost_ha": 0.0,
+        "total_water_lost_ha": 0.0
+    }
+    encroachment_heatmap_url = None
+
+    before_mask_path = PRECOMPUTED_DIR / zone / f"mask_rgb_{before_yr}.png"
+    after_mask_path = PRECOMPUTED_DIR / zone / f"mask_rgb_{after_yr}.png"
+
+    if before_mask_path.exists() and after_mask_path.exists():
+        try:
+            from PIL import Image
+            import numpy as np
+            from analytics.encroachment import calculate_encroachment_stats, generate_encroachment_heatmap
+
+            before_img = np.array(Image.open(before_mask_path).convert("RGB"))
+            after_img = np.array(Image.open(after_mask_path).convert("RGB"))
+
+            def rgb_to_mask(rgb_img):
+                h, w = rgb_img.shape[:2]
+                mask = np.zeros((h, w), dtype=np.uint8)
+                for cls_id, info in CLASS_INFO.items():
+                    hex_str = info["color"].lstrip('#')
+                    color = tuple(int(hex_str[i:i+2], 16) for i in (0, 2, 4))
+                    match = np.all(rgb_img == color, axis=-1)
+                    mask[match] = cls_id
+                return mask
+
+            mask_before = rgb_to_mask(before_img)
+            mask_after = rgb_to_mask(after_img)
+
+            # Precomputed zones use esri mapping type
+            mapping_type = "esri"
+            encroachment_stats = calculate_encroachment_stats(mask_before, mask_after, mapping_type=mapping_type)
+
+            # Generate and save dynamic heatmap
+            heatmap_arr = generate_encroachment_heatmap(mask_before, mask_after, mapping_type=mapping_type)
+            heatmap_filename = f"encroachment_heatmap_{before_yr}_{after_yr}.png"
+            heatmap_path = PRECOMPUTED_DIR / zone / heatmap_filename
+            Image.fromarray(heatmap_arr).save(heatmap_path)
+
+            encroachment_heatmap_url = f"/static/{zone}/{heatmap_filename}"
+        except Exception as e:
+            logger.error(f"Error computing dynamic encroachment for zone {zone}: {e}")
+
+    # Fallback to general heatmap if dynamic computation failed
+    if not encroachment_heatmap_url:
+        encroachment_heatmap_url = get_overlay_url("encroachment_heatmap.png")
+        if verdict:
+            encroachment_stats = verdict.get("encroachment", encroachment_stats)
+
+    dynamic_crop_loss_ha = 0.0
+    if rec_before and rec_after:
+        dynamic_crop_loss_ha = round((rec_before.get("cropland_pixels", 0) - rec_after.get("cropland_pixels", 0)) * 0.01, 2)
+    else:
+        dynamic_crop_loss_ha = verdict.get("cropland_loss_ha", 0.0)
+
     return {
         "zone_info": {
             "key": zone,
@@ -297,20 +372,21 @@ def analyse_zone(
             "satyukt_relevance": zone_cfg.get("satyukt_relevance", "")
         },
         "metrics": {
-            "latest_abi": verdict.get("abi", 0.0),
-            "overall_abi_change_pct": verdict.get("overall_abi_change_pct", 0.0),
-            "cropland_loss_ha": verdict.get("cropland_loss_ha", 0.0),
-            "grade": verdict.get("grade", "N/A"),
-            "label": verdict.get("label", ""),
-            "description": verdict.get("description", ""),
-            "encroachment_alert": verdict.get("encroachment_alert", False)
+            "latest_abi": after_abi,
+            "overall_abi_change_pct": abi_change_pct,
+            "cropland_loss_ha": dynamic_crop_loss_ha,
+            "grade": grade,
+            "label": label,
+            "description": description,
+            "encroachment_alert": encroachment_alert,
+            "encroachment": encroachment_stats
         },
         "comparison": {
             "before_year": before_yr,
             "after_year": after_yr,
-            "before_abi": rec_before.get("abi", 0.0) if rec_before else 0.0,
-            "after_abi": rec_after.get("abi", 0.0) if rec_after else 0.0,
-            "abi_change_pct": (((rec_after.get("abi", 0.0) - rec_before.get("abi", 0.0)) / rec_before.get("abi", 1.0) * 100.0) if rec_before and rec_before.get("abi", 0.0) > 0 else 0.0)
+            "before_abi": before_abi,
+            "after_abi": after_abi,
+            "abi_change_pct": abi_change_pct
         },
         "transitions": transitions,
         "timeseries": timeseries,
@@ -324,7 +400,8 @@ def analyse_zone(
                 "true_color": after_tc,
                 "ndvi": after_ndvi,
                 "mask": after_mask
-            }
+            },
+            "encroachment_heatmap": encroachment_heatmap_url
         }
     }
 

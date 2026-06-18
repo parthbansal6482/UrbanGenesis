@@ -48,6 +48,16 @@ CLASS_COLORS = {
     5: (210, 180, 140),  # bare soil - tan
 }
 
+# Allowed transition matrix: [from_class, to_class]
+ALLOWED_TRANSITIONS = np.array([
+    [True,  True,  True,  True,  True,  True],  # 0 (bg): can stay bg or transition to anything
+    [False, True,  False, False, False, False], # 1 (bld): can ONLY stay building (strict persistence)
+    [False, True,  True,  False, False, True],  # 2 (crop): can become bld or soil, but NOT veg or water
+    [False, True,  True,  True,  False, True],  # 3 (veg): can become bld, crop, soil, or stay veg, but NOT water
+    [False, True,  True,  False, True,  True],  # 4 (wat): can become bld, crop, soil, or stay water, but NOT veg
+    [False, True,  True,  False, False, True],  # 5 (soil): can become bld, crop, or stay soil, but NOT veg or water
+], dtype=bool)
+
 def rgb_to_mask(rgb_img):
     """Convert RGB mask back to integer class index mask."""
     h, w = rgb_img.shape[:2]
@@ -362,19 +372,21 @@ class GlobalPatchDataset(Dataset):
         # One-hot representations
         prev2_oh = np.eye(6)[p_prev2].transpose(2, 0, 1).astype(np.float32)
         prev_oh  = np.eye(6)[p_prev].transpose(2, 0, 1).astype(np.float32)
-        dist_feat_prev2 = p_dist_prev2.transpose(2, 0, 1) # 5 x H x W
         dist_feat_prev = p_dist_prev.transpose(2, 0, 1)   # 5 x H x W
+        # Compute change velocity in distance transforms (spatial change features)
+        dist_diff = (p_dist_prev - p_dist_prev2).transpose(2, 0, 1) # 5 x H x W
         
         X = np.concatenate([
             prev2_oh, prev_oh,
-            dist_feat_prev2, dist_feat_prev
+            dist_feat_prev, dist_diff
         ], axis=0) # 22 channels
         
         if p_target is not None:
             return (torch.tensor(X.copy(), dtype=torch.float32), 
                     torch.tensor(p_target.copy(), dtype=torch.long),
                     torch.tensor(p_prev.copy(), dtype=torch.long))
-        return torch.tensor(X.copy(), dtype=torch.float32)
+        return (torch.tensor(X.copy(), dtype=torch.float32),
+                torch.tensor(p_prev.copy(), dtype=torch.long))
 
 def compute_class_weights(dataset):
     """Calculate inverse frequency weights for class imbalance."""
@@ -426,6 +438,28 @@ class HybridLoss(nn.Module):
     def forward(self, logits, targets):
         return 0.5 * self.ce(logits, targets) + 0.5 * self.dice(logits, targets)
 
+class ChangeWeightedHybridLoss(nn.Module):
+    """Dice + Change-Weighted Cross-Entropy Loss."""
+    def __init__(self, change_weight=3.0, smooth=1.0):
+        super().__init__()
+        self.change_weight = change_weight
+        self.ce = nn.CrossEntropyLoss(reduction="none")
+        self.dice = DiceLoss(smooth=smooth)
+
+    def forward(self, logits, targets, prev):
+        # CE loss (unreduced)
+        ce_loss = self.ce(logits, targets) # (N, H, W)
+        
+        # Calculate pixel-wise weights based on whether they transitioned
+        change_mask = (targets != prev)
+        weights = torch.ones_like(targets, dtype=torch.float32)
+        weights[change_mask] = self.change_weight
+        
+        weighted_ce = (ce_loss * weights).mean()
+        dice_loss = self.dice(logits, targets)
+        
+        return 0.5 * weighted_ce + 0.5 * dice_loss
+
 # ─────────────────────────────────────────────────────
 # 3. Main Global Orchestration
 # ─────────────────────────────────────────────────────
@@ -475,8 +509,8 @@ if __name__ == "__main__":
     
     # Build U-Net model with 22 input channels (one-hot masks + Distance Transforms for both years)
     model = UNet(in_channels=22, out_channels=6).to(device)
-    # Use standard Cross-Entropy Loss to directly optimize overall pixel accuracy
-    criterion = nn.CrossEntropyLoss()
+    # Use Change-Weighted Hybrid Loss to focus on transitions and region overlap
+    criterion = ChangeWeightedHybridLoss(change_weight=3.0)
     optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
     # Cosine Annealing Learning Rate Scheduler for smooth convergence
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
@@ -487,12 +521,12 @@ if __name__ == "__main__":
     model.train()
     for epoch in range(epochs):
         epoch_loss = 0.0
-        for X_batch, y_batch, _ in train_loader:
-            X_batch, y_batch = X_batch.to(device), y_batch.to(device)
+        for X_batch, y_batch, prev_batch in train_loader:
+            X_batch, y_batch, prev_batch = X_batch.to(device), y_batch.to(device), prev_batch.to(device)
             optimizer.zero_grad()
             with torch.amp.autocast('cuda', enabled=use_amp):
                 outputs = model(X_batch)
-                loss = criterion(outputs, y_batch)
+                loss = criterion(outputs, y_batch, prev_batch)
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
@@ -515,11 +549,18 @@ if __name__ == "__main__":
     correct = 0
     total = 0
     with torch.no_grad():
-        for X_batch, y_batch, _ in val_loader:
-            X_batch, y_batch = X_batch.to(device), y_batch.to(device)
+        for X_batch, y_batch, prev_batch in val_loader:
+            X_batch, y_batch, prev_batch = X_batch.to(device), y_batch.to(device), prev_batch.to(device)
             with torch.amp.autocast('cuda', enabled=use_amp):
                 outputs = model(X_batch)
-                preds = torch.argmax(outputs, dim=1)
+                
+                # Apply transition constraints by masking logits
+                allowed_tensor = torch.tensor(ALLOWED_TRANSITIONS, device=device, dtype=torch.bool)
+                mask = allowed_tensor[prev_batch].permute(0, 3, 1, 2)
+                outputs_masked = outputs.clone()
+                outputs_masked[~mask] = -1e9
+                preds = torch.argmax(outputs_masked, dim=1)
+                
             correct += (preds == y_batch).sum().item()
             total += y_batch.numel()
     acc = correct / total * 100
@@ -561,11 +602,16 @@ if __name__ == "__main__":
             
             patch_idx = 0
             with torch.no_grad():
-                for X_batch in forecast_loader:
-                    X_batch = X_batch.to(device)
+                for X_batch, prev_batch in forecast_loader:
+                    X_batch, prev_batch = X_batch.to(device), prev_batch.to(device)
                     with torch.amp.autocast('cuda', enabled=use_amp):
                         outputs = model(X_batch)
-                        preds = torch.argmax(outputs, dim=1).cpu().numpy()
+                        # Apply transition constraints by masking logits
+                        allowed_tensor = torch.tensor(ALLOWED_TRANSITIONS, device=device, dtype=torch.bool)
+                        mask = allowed_tensor[prev_batch].permute(0, 3, 1, 2)
+                        outputs_masked = outputs.clone()
+                        outputs_masked[~mask] = -1e9
+                        preds = torch.argmax(outputs_masked, dim=1).cpu().numpy()
                     for b in range(preds.shape[0]):
                         py = patch_idx // forecast_dataset.w_patches
                         px = patch_idx % forecast_dataset.w_patches
@@ -576,6 +622,11 @@ if __name__ == "__main__":
                         
             # Crop back to original dimensions
             full_forecast_mask = forecast_mask[:h, :w]
+            
+            # Apply building persistence constraint from y_prev (water shrinks naturally)
+            prev_mask = masks[y_prev]
+            full_forecast_mask[prev_mask == 1] = 1
+            
             masks[target_yr] = full_forecast_mask
             
             # Save mask_rgb_{target_yr}.png

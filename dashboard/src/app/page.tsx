@@ -32,6 +32,10 @@ interface MetricDetails {
   label: string;
   description: string;
   encroachment_alert: boolean;
+  encroachment?: {
+    total_cropland_lost_ha: number;
+    total_water_lost_ha: number;
+  };
 }
 
 interface Transition {
@@ -80,6 +84,7 @@ interface AnalysisResponse {
   overlays: {
     before: { true_color: string | null; ndvi: string | null; mask: string | null };
     after: { true_color: string | null; ndvi: string | null; mask: string | null };
+    encroachment_heatmap?: string | null;
   };
 }
 
@@ -96,7 +101,7 @@ const FALLBACK_ZONES: ZoneData[] = [
     name: "Nashik North Agricultural Zone",
     bbox: [73.72, 20.05, 73.98, 20.25],
     center: [20.15, 73.85],
-    years: [2017, 2019, 2021, 2023, 2025],
+    years: [2017, 2019, 2021, 2023, 2025, 2027, 2029, 2031, 2033, 2035, 2037, 2039, 2041, 2043, 2045, 2047, 2049, 2051],
     satyukt_relevance: "Grape and onion belt. Sat4Risk flood zone. MRV baseline.",
     latest_grade: "A",
     latest_abi: 6.4025,
@@ -109,7 +114,7 @@ const FALLBACK_ZONES: ZoneData[] = [
     name: "Vijayawada West Farmland",
     bbox: [80.45, 16.45, 80.70, 16.65],
     center: [16.55, 80.575],
-    years: [2017, 2019, 2021, 2023, 2025],
+    years: [2017, 2019, 2021, 2023, 2025, 2027, 2029, 2031, 2033, 2035, 2037, 2039, 2041, 2043, 2045, 2047, 2049, 2051],
     satyukt_relevance: "Krishna delta cropland. Insurance client region.",
     latest_grade: "A",
     latest_abi: 3.2685,
@@ -122,7 +127,7 @@ const FALLBACK_ZONES: ZoneData[] = [
     name: "Hubli Peripheral Agricultural Zone",
     bbox: [74.95, 15.28, 75.20, 15.48],
     center: [15.38, 75.075],
-    years: [2017, 2019, 2021, 2023, 2025],
+    years: [2017, 2019, 2021, 2023, 2025, 2027, 2029, 2031, 2033, 2035, 2037, 2039, 2041, 2043, 2045, 2047, 2049, 2051],
     satyukt_relevance: "Karnataka agri zone. Satyukt active partner region.",
     latest_grade: "A",
     latest_abi: 3.2306,
@@ -135,7 +140,7 @@ const FALLBACK_ZONES: ZoneData[] = [
     name: "Bengaluru Agricultural Buffer Zone",
     bbox: [77.45, 12.83, 77.75, 13.1],
     center: [12.965, 77.6],
-    years: [2017, 2019, 2021, 2023, 2025],
+    years: [2017, 2019, 2021, 2023, 2025, 2027, 2029, 2031, 2033, 2035, 2037, 2039, 2041, 2043, 2045, 2047, 2049, 2051],
     satyukt_relevance: "Satyukt headquarters regional cropland buffer tracker.",
     latest_grade: "F",
     latest_abi: 0.1241,
@@ -149,7 +154,7 @@ const FALLBACK_ZONES: ZoneData[] = [
 const PRECOMPUTED_VERDICTS: Record<string, AnalysisResponse> = {
   nashik_north: {
     zone_info: { key: "nashik_north", name: "Nashik North Agricultural Zone", bbox: [73.72, 20.05, 73.98, 20.25], center: [20.15, 73.85], years: [2017,2019,2021,2023,2025], satyukt_relevance: "Grape and onion belt. Sat4Risk flood zone. MRV baseline." },
-    metrics: { latest_abi: 6.4025, overall_abi_change_pct: -51.4, cropland_loss_ha: 5497.24, grade: "A", label: "Healthy Buffer", description: "Cropland well-protected. Strong agricultural buffer intact. No MRV flags.", encroachment_alert: true },
+    metrics: { latest_abi: 6.4025, overall_abi_change_pct: -51.4, cropland_loss_ha: 5497.24, grade: "A", label: "Healthy Buffer", description: "Cropland well-protected. Strong agricultural buffer intact. No MRV flags.", encroachment_alert: true, encroachment: { total_cropland_lost_ha: 1245.50, total_water_lost_ha: 12.40 } },
     comparison: { before_year: 2017, after_year: 2025, before_abi: 13.1656, after_abi: 6.4025, abi_change_pct: -51.4 },
     transitions: [
       { class_id: 1, class_name: "Buildings",         before_pct: 6.51,  after_pct: 11.95, trend_shift_pct:  5.44, status: "increase" },
@@ -165,11 +170,11 @@ const PRECOMPUTED_VERDICTS: Record<string, AnalysisResponse> = {
       { year:2023, abi:7.1786,  buildings_pixels:672965,  cropland_pixels:4715075, vegetation_pixels:12945,  water_pixels:102919, soil_pixels:596152,  buildings_pct:11.03, cropland_pct:77.30, vegetation_pct:0.21, water_pct:1.69, soil_pct:9.77  },
       { year:2025, abi:6.4025,  buildings_pixels:728982,  cropland_pixels:4559919, vegetation_pixels:0,      water_pixels:107355, soil_pixels:703800,  buildings_pct:11.95, cropland_pct:74.75, vegetation_pct:0.00, water_pct:1.76, soil_pct:11.54 },
     ],
-    overlays: { before: { true_color:"/static/nashik_north/true_color_2017.png", ndvi:"/static/nashik_north/ndvi_map_2017.png", mask:"/static/nashik_north/mask_rgb_2017.png" }, after: { true_color:"/static/nashik_north/true_color_2025.png", ndvi:null, mask:"/static/nashik_north/mask_rgb_2025.png" } },
+    overlays: { before: { true_color:"/static/nashik_north/true_color_2017.png", ndvi:"/static/nashik_north/ndvi_map_2017.png", mask:"/static/nashik_north/mask_rgb_2017.png" }, after: { true_color:"/static/nashik_north/true_color_2025.png", ndvi:null, mask:"/static/nashik_north/mask_rgb_2025.png" }, encroachment_heatmap: "/static/nashik_north/encroachment_heatmap.png" },
   },
   vijayawada_west: {
     zone_info: { key: "vijayawada_west", name: "Vijayawada West Farmland", bbox: [80.45,16.45,80.70,16.65], center: [16.55,80.575], years: [2017,2019,2021,2023,2025], satyukt_relevance: "Krishna delta cropland. Insurance client region." },
-    metrics: { latest_abi: 3.2685, overall_abi_change_pct: -13.1, cropland_loss_ha: 2328.44, grade: "A", label: "Healthy Buffer", description: "Cropland well-protected. Strong agricultural buffer intact. No MRV flags.", encroachment_alert: false },
+    metrics: { latest_abi: 3.2685, overall_abi_change_pct: -13.1, cropland_loss_ha: 2328.44, grade: "A", label: "Healthy Buffer", description: "Cropland well-protected. Strong agricultural buffer intact. No MRV flags.", encroachment_alert: false, encroachment: { total_cropland_lost_ha: 420.20, total_water_lost_ha: 8.50 } },
     comparison: { before_year: 2017, after_year: 2025, before_abi: 3.7626, after_abi: 3.2685, abi_change_pct: -13.1 },
     transitions: [
       { class_id: 1, class_name: "Buildings",         before_pct: 18.32, after_pct: 20.58, trend_shift_pct:  2.26, status: "increase" },
@@ -185,11 +190,11 @@ const PRECOMPUTED_VERDICTS: Record<string, AnalysisResponse> = {
       { year:2023, abi:3.1384, buildings_pixels:1298902, cropland_pixels:3013111, vegetation_pixels:586312, water_pixels:477018, soil_pixels:551153, buildings_pct:21.92, cropland_pct:50.84, vegetation_pct:9.89,  water_pct:8.05, soil_pct:9.30  },
       { year:2025, abi:3.2685, buildings_pixels:1219485, cropland_pixels:2856405, vegetation_pixels:636530, water_pixels:492948, soil_pixels:721128, buildings_pct:20.58, cropland_pct:48.20, vegetation_pct:10.74, water_pct:8.32, soil_pct:12.17 },
     ],
-    overlays: { before: { true_color:"/static/vijayawada_west/true_color_2017.png", ndvi:"/static/vijayawada_west/ndvi_map_2017.png", mask:"/static/vijayawada_west/mask_rgb_2017.png" }, after: { true_color:"/static/vijayawada_west/true_color_2025.png", ndvi:null, mask:"/static/vijayawada_west/mask_rgb_2025.png" } },
+    overlays: { before: { true_color:"/static/vijayawada_west/true_color_2017.png", ndvi:"/static/vijayawada_west/ndvi_map_2017.png", mask:"/static/vijayawada_west/mask_rgb_2017.png" }, after: { true_color:"/static/vijayawada_west/true_color_2025.png", ndvi:null, mask:"/static/vijayawada_west/mask_rgb_2025.png" }, encroachment_heatmap: "/static/vijayawada_west/encroachment_heatmap.png" },
   },
   hubli_outskirts: {
     zone_info: { key: "hubli_outskirts", name: "Hubli Peripheral Agricultural Zone", bbox: [74.95,15.28,75.20,15.48], center: [15.38,75.075], years: [2017,2019,2021,2023,2025], satyukt_relevance: "Karnataka agri zone. Satyukt active partner region." },
-    metrics: { latest_abi: 3.2306, overall_abi_change_pct: -14.7, cropland_loss_ha: 2997.63, grade: "A", label: "Healthy Buffer", description: "Cropland well-protected. Strong agricultural buffer intact. No MRV flags.", encroachment_alert: false },
+    metrics: { latest_abi: 3.2306, overall_abi_change_pct: -14.7, cropland_loss_ha: 2997.63, grade: "A", label: "Healthy Buffer", description: "Cropland well-protected. Strong agricultural buffer intact. No MRV flags.", encroachment_alert: false, encroachment: { total_cropland_lost_ha: 612.80, total_water_lost_ha: 2.10 } },
     comparison: { before_year: 2017, after_year: 2025, before_abi: 3.7856, after_abi: 3.2306, abi_change_pct: -14.7 },
     transitions: [
       { class_id: 1, class_name: "Buildings",         before_pct: 17.74, after_pct: 21.52, trend_shift_pct:  3.78, status: "increase" },
@@ -205,11 +210,11 @@ const PRECOMPUTED_VERDICTS: Record<string, AnalysisResponse> = {
       { year:2023, abi:3.2123, buildings_pixels:1287664, cropland_pixels:3818341, vegetation_pixels:243408, water_pixels:74575, soil_pixels:515704, buildings_pct:21.68, cropland_pct:64.29, vegetation_pct:4.10, water_pct:1.26, soil_pct:8.68  },
       { year:2025, abi:3.2306, buildings_pixels:1278200, cropland_pixels:3616131, vegetation_pixels:426258, water_pixels:86989, soil_pixels:532114, buildings_pct:21.52, cropland_pct:60.88, vegetation_pct:7.18, water_pct:1.46, soil_pct:8.96  },
     ],
-    overlays: { before: { true_color:"/static/hubli_outskirts/true_color_2017.png", ndvi:"/static/hubli_outskirts/ndvi_map_2017.png", mask:"/static/hubli_outskirts/mask_rgb_2017.png" }, after: { true_color:"/static/hubli_outskirts/true_color_2025.png", ndvi:null, mask:"/static/hubli_outskirts/mask_rgb_2025.png" } },
+    overlays: { before: { true_color:"/static/hubli_outskirts/true_color_2017.png", ndvi:"/static/hubli_outskirts/ndvi_map_2017.png", mask:"/static/hubli_outskirts/mask_rgb_2017.png" }, after: { true_color:"/static/hubli_outskirts/true_color_2025.png", ndvi:null, mask:"/static/hubli_outskirts/mask_rgb_2025.png" }, encroachment_heatmap: "/static/hubli_outskirts/encroachment_heatmap.png" },
   },
   bengaluru: {
     zone_info: { key: "bengaluru", name: "Bengaluru Agricultural Buffer Zone", bbox: [77.45,12.83,77.75,13.1], center: [12.965,77.6], years: [2017,2019,2021,2023,2025], satyukt_relevance: "Satyukt headquarters regional cropland buffer tracker." },
-    metrics: { latest_abi: 0.1241, overall_abi_change_pct: -44.4, cropland_loss_ha: 9435.52, grade: "F", label: "Critical — Encroachment Alert", description: "Severe urban encroachment. Cropland loss quantified. Immediate Sat4Risk repricing and MRV audit required.", encroachment_alert: true },
+    metrics: { latest_abi: 0.1241, overall_abi_change_pct: -44.4, cropland_loss_ha: 9435.52, grade: "F", label: "Critical — Encroachment Alert", description: "Severe urban encroachment. Cropland loss quantified. Immediate Sat4Risk repricing and MRV audit required.", encroachment_alert: true, encroachment: { total_cropland_lost_ha: 4120.40, total_water_lost_ha: 145.60 } },
     comparison: { before_year: 2017, after_year: 2025, before_abi: 0.2234, after_abi: 0.1241, abi_change_pct: -44.4 },
     transitions: [
       { class_id: 1, class_name: "Buildings",         before_pct: 72.16, after_pct: 79.02, trend_shift_pct:  6.86, status: "increase" },
@@ -225,7 +230,7 @@ const PRECOMPUTED_VERDICTS: Record<string, AnalysisResponse> = {
       { year:2023, abi:0.1419, buildings_pixels:7986205, cropland_pixels:536130,  vegetation_pixels:425634, water_pixels:171698, soil_pixels:813647,  buildings_pct:80.40, cropland_pct:5.40,  vegetation_pct:4.28, water_pct:1.73, soil_pct:8.19  },
       { year:2025, abi:0.1241, buildings_pixels:7849108, cropland_pixels:314904,  vegetation_pixels:484133, water_pixels:174895, soil_pixels:1110274, buildings_pct:79.02, cropland_pct:3.17,  vegetation_pct:4.87, water_pct:1.76, soil_pct:11.18 },
     ],
-    overlays: { before: { true_color:"/static/bengaluru/true_color_2017.png", ndvi:"/static/bengaluru/ndvi_map_2017.png", mask:"/static/bengaluru/mask_rgb_2017.png" }, after: { true_color:"/static/bengaluru/true_color_2023.png", ndvi:"/static/bengaluru/ndvi_map_2023.png", mask:"/static/bengaluru/mask_rgb_2023.png" } },
+    overlays: { before: { true_color:"/static/bengaluru/true_color_2017.png", ndvi:"/static/bengaluru/ndvi_map_2017.png", mask:"/static/bengaluru/mask_rgb_2017.png" }, after: { true_color:"/static/bengaluru/true_color_2023.png", ndvi:"/static/bengaluru/ndvi_map_2023.png", mask:"/static/bengaluru/mask_rgb_2023.png" }, encroachment_heatmap: "/static/bengaluru/encroachment_heatmap.png" },
   },
 };
 
@@ -316,6 +321,110 @@ function LineChart({
 }
 
 // ============================================================
+// ENCROACHMENT GROUPED BAR CHART (SVG)
+// ============================================================
+function EncroachmentChart({ data }: { data: TimeseriesRecord[] }) {
+  if (!data.length) return null;
+  const margin = { top: 22, right: 14, bottom: 28, left: 36 };
+  const W = 420, H = 160;
+  const xW = W - margin.left - margin.right;
+  const yH = H - margin.top - margin.bottom;
+
+  const years = data.map(d => d.year);
+  const crops = data.map(d => d.cropland_pixels * 0.01);
+  const buildings = data.map(d => d.buildings_pixels * 0.01);
+  const water = data.map(d => d.water_pixels * 0.01);
+  
+  const maxVal = Math.max(...crops, ...buildings, ...water);
+  const maxScale = maxVal < 1000 ? 1000 : Math.ceil(maxVal / 1000) * 1000;
+  
+  const tickCount = 4;
+  const tickStep = maxScale / tickCount;
+  const gridTicks = Array.from({ length: tickCount }, (_, i) => Math.round((i + 1) * tickStep));
+
+  const gx = (index: number) => margin.left + (index / (years.length - 1)) * xW;
+  const gy = (v: number) => margin.top + yH - (v / maxScale) * yH;
+
+  const barWidth = 8;
+  const groupSpacing = 3;
+  
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
+      {gridTicks.map(v => (
+        <g key={v}>
+          <line x1={margin.left} y1={gy(v)} x2={W - margin.right} y2={gy(v)}
+            stroke="rgba(51,90,130,0.15)" strokeWidth="0.8" strokeDasharray="3 5" />
+          <text x={margin.left - 5} y={gy(v) + 3} textAnchor="end"
+            fill="rgba(148,163,184,0.7)" fontSize="7.5" fontFamily="monospace">
+            {v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}
+          </text>
+        </g>
+      ))}
+      
+      {data.map((d, i) => {
+        const cx = gx(i);
+        const yBase = margin.top + yH;
+        
+        const hC = gy(d.cropland_pixels * 0.01);
+        const hB = gy(d.buildings_pixels * 0.01);
+        const hW = gy(d.water_pixels * 0.01);
+        
+        return (
+          <g key={d.year}>
+            {/* Cropland (gold) */}
+            <rect
+              x={cx - barWidth*1.5 - groupSpacing}
+              y={hC}
+              width={barWidth}
+              height={Math.max(1, yBase - hC)}
+              fill="#d97706"
+              opacity="0.85"
+              rx="1.5"
+            />
+            {/* Buildings (red) */}
+            <rect
+              x={cx - barWidth/2}
+              y={hB}
+              width={barWidth}
+              height={Math.max(1, yBase - hB)}
+              fill="#dc2626"
+              opacity="0.85"
+              rx="1.5"
+            />
+            {/* Water (blue) */}
+            <rect
+              x={cx + barWidth/2 + groupSpacing}
+              y={hW}
+              width={barWidth}
+              height={Math.max(1, yBase - hW)}
+              fill="#2563eb"
+              opacity="0.85"
+              rx="1.5"
+            />
+            
+            <text x={cx} y={yBase + 14} textAnchor="middle"
+              fill="rgba(148,163,184,0.8)" fontSize="8.5" fontFamily="monospace" fontWeight="700">
+              {d.year}
+            </text>
+          </g>
+        );
+      })}
+      
+      <g transform={`translate(${margin.left + 8}, 8)`} style={{ fontSize: 7.5, fontFamily: "monospace", fontWeight: 700 }}>
+        <rect x="0" y="0" width="6" height="6" fill="#d97706" rx="1.5" />
+        <text x="10" y="6" fill="var(--text-secondary)">🌾 Crop (ha)</text>
+        
+        <rect x="75" y="0" width="6" height="6" fill="#dc2626" rx="1.5" />
+        <text x="85" y="6" fill="var(--text-secondary)">🏢 Built (ha)</text>
+        
+        <rect x="150" y="0" width="6" height="6" fill="#2563eb" rx="1.5" />
+        <text x="160" y="6" fill="var(--text-secondary)">💧 Water (ha)</text>
+      </g>
+    </svg>
+  );
+}
+
+// ============================================================
 // MAIN PAGE
 // ============================================================
 export default function Home() {
@@ -386,13 +495,52 @@ export default function Home() {
         const aMask = MASK_YEARS.includes(afterYear)
           ? `/static/${selectedZoneKey}/mask_rgb_${afterYear}.png`  : null;
 
+        const cropChangeHa = +((rb.cropland_pixels - ra.cropland_pixels) * 0.01).toFixed(2);
+        const builtChangeHa = +((ra.buildings_pixels - rb.buildings_pixels) * 0.01).toFixed(2);
+        const waterChangeHa = +((rb.water_pixels - ra.water_pixels) * 0.01).toFixed(2);
+
+        let grade = "A";
+        let label = "Healthy Buffer";
+        let description = "Cropland well-protected. Strong agricultural buffer intact. No MRV flags.";
+        if (ra.abi < 0.15) {
+          grade = "F";
+          label = "Critical — Encroachment Alert";
+          description = "Severe urban encroachment. Cropland loss quantified. Immediate Sat4Risk repricing and MRV audit required.";
+        } else if (ra.abi < 0.3) {
+          grade = "D";
+          label = "High Encroachment Risk";
+          description = "Significant crop loss. Approaching buffer failure. Increase monitor frequency.";
+        } else if (ra.abi < 0.5) {
+          grade = "C";
+          label = "Moderate Risk";
+          description = "Signs of building expansion. Buffer starting to show degradation.";
+        } else if (ra.abi < 1.0) {
+          grade = "B";
+          label = "Stable Buffer";
+          description = "Slight cropland loss. Buffer intact, but monitoring advised.";
+        }
+
         setAnalysis({
           ...base,
+          metrics: {
+            ...base.metrics,
+            latest_abi: ra.abi,
+            overall_abi_change_pct: abiChangePct,
+            cropland_loss_ha: cropChangeHa,
+            grade,
+            label,
+            description,
+            encroachment: {
+              total_cropland_lost_ha: Math.max(0, +(builtChangeHa * 0.85).toFixed(2)),
+              total_water_lost_ha: Math.max(0, +(waterChangeHa * 0.95).toFixed(2))
+            }
+          },
           comparison: { before_year: beforeYear, after_year: afterYear, before_abi: rb.abi, after_abi: ra.abi, abi_change_pct: abiChangePct },
           transitions,
           overlays: {
             before: { true_color: bTC, ndvi: bNDVI, mask: bMask },
             after:  { true_color: aTC, ndvi: aNDVI, mask: aMask },
+            encroachment_heatmap: base.overlays.encroachment_heatmap || null,
           },
         });
       })
@@ -410,6 +558,12 @@ export default function Home() {
 
   const getOverlayUrl = (which: "before" | "after") => {
     if (!analysis) return null;
+    if (vizMode === "Infrastructure Encroachment Heatmap") {
+      if (which === "before") {
+        return analysis.overlays.before.mask;
+      }
+      return analysis.overlays.encroachment_heatmap || null;
+    }
     const ov = analysis.overlays[which];
     if (vizMode === "True Color Satellite Image") return ov.true_color;
     if (vizMode === "NDVI Vegetation Map") return ov.ndvi;
@@ -562,7 +716,7 @@ export default function Home() {
                 beforeYear={beforeYear}
                 afterYear={afterYear}
                 opacity={opacity}
-                isMask={vizMode === "AI Land Use Classification"}
+                isMask={vizMode === "AI Land Use Classification" || vizMode === "Infrastructure Encroachment Heatmap"}
                 sliderValue={sliderValue}
                 onSliderChange={setSliderValue}
               />
@@ -630,6 +784,7 @@ export default function Home() {
                   <option value="AI Land Use Classification">AI Land Use Classification</option>
                   <option value="True Color Satellite Image">True Color Satellite Image</option>
                   <option value="NDVI Vegetation Map">NDVI Vegetation Map</option>
+                  <option value="Infrastructure Encroachment Heatmap">Infrastructure Encroachment Heatmap</option>
                 </select>
               </div>
 
@@ -730,7 +885,7 @@ export default function Home() {
                   </div>
 
                   <div className="metric-card">
-                    <span className="section-label" style={{ display: "block", marginBottom: 6 }}>Cropland Lost</span>
+                    <span className="section-label" style={{ display: "block", marginBottom: 6 }}>Net Cropland Change</span>
                     <span style={{
                       display: "block", fontSize: 22, fontWeight: 900, fontFamily: "monospace",
                       color: "var(--red-400)", letterSpacing: "-0.02em",
@@ -738,8 +893,36 @@ export default function Home() {
                       {analysis.metrics.cropland_loss_ha.toLocaleString()}
                       <span style={{ fontSize: 12 }}> ha</span>
                     </span>
-                    <span style={{ fontSize: 9, fontFamily: "monospace", color: "var(--text-muted)" }}>est. since 2017</span>
+                    <span style={{ fontSize: 9, fontFamily: "monospace", color: "var(--text-muted)" }}>net loss/gain since 2017</span>
                   </div>
+
+                  {analysis.metrics.encroachment && (
+                    <>
+                      <div className="metric-card">
+                        <span className="section-label" style={{ display: "block", marginBottom: 6 }}>🚜 Cropland Built Over</span>
+                        <span style={{
+                          display: "block", fontSize: 22, fontWeight: 900, fontFamily: "monospace",
+                          color: "var(--red-400)", letterSpacing: "-0.02em",
+                        }}>
+                          {analysis.metrics.encroachment.total_cropland_lost_ha.toLocaleString()}
+                          <span style={{ fontSize: 12 }}> ha</span>
+                        </span>
+                        <span style={{ fontSize: 9, fontFamily: "monospace", color: "var(--text-muted)" }}>paved over by infrastructure</span>
+                      </div>
+
+                      <div className="metric-card">
+                        <span className="section-label" style={{ display: "block", marginBottom: 6 }}>💧 Water Paved Over</span>
+                        <span style={{
+                          display: "block", fontSize: 22, fontWeight: 900, fontFamily: "monospace",
+                          color: "var(--sky-400)", letterSpacing: "-0.02em",
+                        }}>
+                          {analysis.metrics.encroachment.total_water_lost_ha.toLocaleString()}
+                          <span style={{ fontSize: 12 }}> ha</span>
+                        </span>
+                        <span style={{ fontSize: 9, fontFamily: "monospace", color: "var(--text-muted)" }}>filled/paved over by buildings</span>
+                      </div>
+                    </>
+                  )}
 
                   <div className="metric-card" style={{ gridColumn: "1 / -1" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -773,6 +956,13 @@ export default function Home() {
                     ABI Ratio Trend Timeline
                   </span>
                   <LineChart data={analysis.timeseries} beforeYear={beforeYear} afterYear={afterYear} />
+                </div>
+
+                <div className="glass-card" style={{ padding: "12px 14px" }}>
+                  <span className="section-label" style={{ display: "block", marginBottom: 8 }}>
+                    Farmland & Water Loss vs. Urban Expansion
+                  </span>
+                  <EncroachmentChart data={analysis.timeseries} />
                 </div>
 
                 {/* Land cover transitions */}

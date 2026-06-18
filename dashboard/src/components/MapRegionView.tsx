@@ -295,19 +295,19 @@ export default function MapRegionView({ zones, selectedZoneKey, onSelectZone }: 
                 <circle cx={cx} cy={cy} r={isSelected ? 28 : 22} fill="none"
                   stroke={color} strokeWidth="1" opacity="0.2">
                   <animate attributeName="r" values={`${isSelected ? 22 : 16};${isSelected ? 34 : 26};${isSelected ? 22 : 16}`}
-                    dur={isAlert ? "1.8s" : "2.5s"} repeatCount="indefinite" />
+                    dur={isHighRisk ? "1.8s" : "2.5s"} repeatCount="indefinite" />
                   <animate attributeName="opacity" values="0.3;0;0.3"
-                    dur={isAlert ? "1.8s" : "2.5s"} repeatCount="indefinite" />
+                    dur={isHighRisk ? "1.8s" : "2.5s"} repeatCount="indefinite" />
                 </circle>
 
                 {/* Middle ring */}
                 <circle cx={cx} cy={cy} r={isSelected ? 16 : 12} fill="none"
                   stroke={color} strokeWidth={isSelected ? 2 : 1.2} opacity="0.5">
                   <animate attributeName="r" values={`${isSelected ? 12 : 8};${isSelected ? 20 : 16};${isSelected ? 12 : 8}`}
-                    dur={isAlert ? "1.8s" : "2.5s"} repeatCount="indefinite"
+                    dur={isHighRisk ? "1.8s" : "2.5s"} repeatCount="indefinite"
                     begin="0.4s" />
                   <animate attributeName="opacity" values="0.6;0.1;0.6"
-                    dur={isAlert ? "1.8s" : "2.5s"} repeatCount="indefinite"
+                    dur={isHighRisk ? "1.8s" : "2.5s"} repeatCount="indefinite"
                     begin="0.4s" />
                 </circle>
 

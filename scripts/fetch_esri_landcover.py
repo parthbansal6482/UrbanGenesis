@@ -531,15 +531,27 @@ def generate_zone_assets(zone_key, bbox, years, use_network=True):
     timeseries_stats = sorted(timeseries_stats, key=lambda x: x["year"])
 
     loss_ha = 0.0
+    encroachment_stats = {
+        "total_cropland_lost_ha": 0.0,
+        "total_water_lost_ha": 0.0
+    }
     if first_year_mask is not None and last_year_mask is not None:
         loss_ha = compute_cropland_loss_ha(first_year_mask, last_year_mask, resolution_m=10.0)
+        from analytics.encroachment import calculate_encroachment_stats, generate_encroachment_heatmap
+        encroachment_stats = calculate_encroachment_stats(first_year_mask, last_year_mask, mapping_type="esri")
+        
+        # Save encroachment heatmap
+        heatmap_arr = generate_encroachment_heatmap(first_year_mask, last_year_mask, mapping_type="esri")
+        Image.fromarray(heatmap_arr).save(zone_dir / "encroachment_heatmap.png")
+        logger.info(f"  Saved encroachment heatmap to {zone_dir / 'encroachment_heatmap.png'}")
 
     verdict = generate_verdict(timeseries_stats, zone_key, cropland_loss_ha=loss_ha)
+    verdict["encroachment"] = encroachment_stats
 
     with open(zone_dir / "verdict.json", "w") as f:
         json.dump(verdict, f, indent=2)
 
-    logger.info(f"  Grade {verdict['grade']} (ABI={verdict['abi']:.3f}, Crop loss={loss_ha:.1f} ha)")
+    logger.info(f"  Grade {verdict['grade']} (ABI={verdict['abi']:.3f}, Crop loss={loss_ha:.1f} ha, Cropland Encroachment={encroachment_stats['total_cropland_lost_ha']:.1f} ha)")
     return verdict
 
 
