@@ -10,7 +10,7 @@ interface SliderComparisonProps {
   afterImageUrl: string | null;
   beforeYear: number;
   afterYear: number;
-  opacity: number;
+  opacity?: number;
   isMask: boolean;
   sliderValue: number;          // 0–100: position of divider (% from left)
   onSliderChange: (v: number) => void;
@@ -85,7 +85,7 @@ export default function SliderComparison({
   afterImageUrl,
   beforeYear,
   afterYear,
-  opacity,
+  opacity = 1.0,
   isMask,
   sliderValue,
   onSliderChange,

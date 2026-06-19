@@ -135,9 +135,10 @@ export default function LeafletMap({ zones, selectedZoneKey, onSelectZone }: Lea
         delete el._leaflet_id;
       }
 
+      const initialZone = selectedZoneKey ? zones.find(z => z.key === selectedZoneKey) : null;
       const map = L.map(containerRef.current, {
-        center: [20.5, 79.0],
-        zoom: 5,
+        center: initialZone ? [initialZone.center[0], initialZone.center[1]] : [20.5, 79.0],
+        zoom: initialZone ? 11 : 5,
         zoomControl: false,
         attributionControl: false,
       });

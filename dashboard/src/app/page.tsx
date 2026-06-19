@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
+import { motion, AnimatePresence } from "framer-motion";
 
 // Lazy load to avoid SSR issues with browser APIs (canvas, etc.)
 const LeafletMap = dynamic(() => import("../components/LeafletMap"), { ssr: false });
@@ -253,23 +254,24 @@ function gradeClass(g: string): string {
 // LINE CHART (SVG)
 // ============================================================
 function LineChart({
-  data, beforeYear, afterYear,
-}: { data: TimeseriesRecord[]; beforeYear: number; afterYear: number }) {
+  data, beforeYear, afterYear, isExpanded = false,
+}: { data: TimeseriesRecord[]; beforeYear: number; afterYear: number; isExpanded?: boolean }) {
   if (!data.length) return null;
-  const margin = { top: 18, right: 14, bottom: 28, left: 32 };
-  const W = 420, H = 150;
+  const margin = isExpanded
+    ? { top: 28, right: 24, bottom: 36, left: 56 }
+    : { top: 18, right: 14, bottom: 28, left: 32 };
+  const W = isExpanded ? 800 : 420;
+  const H = isExpanded ? 360 : 150;
   const xW = W - margin.left - margin.right;
   const yH = H - margin.top - margin.bottom;
 
   const years = data.map(d => d.year);
   const abis = data.map(d => d.abi);
   const rawMax = Math.max(...abis);
-  // Round up to a clean number for the Y axis
   const maxAbi = rawMax < 2 ? Math.ceil(rawMax * 10) / 10 + 0.1
     : rawMax < 5 ? Math.ceil(rawMax) + 0.5
     : Math.ceil(rawMax / 2) * 2 + 1;
 
-  // Y-axis grid lines — pick sensible ticks
   const tickCount = 4;
   const tickStep = maxAbi / tickCount;
   const gridTicks = Array.from({ length: tickCount }, (_, i) => +((i + 1) * tickStep).toFixed(2));
@@ -291,27 +293,27 @@ function LineChart({
       {gridTicks.map(v => (
         <g key={v}>
           <line x1={margin.left} y1={gy(v)} x2={W - margin.right} y2={gy(v)}
-            stroke="rgba(51,90,130,0.25)" strokeWidth="1" strokeDasharray="3 5" />
-          <text x={margin.left - 5} y={gy(v) + 4} textAnchor="end"
-            fill="rgba(77,101,128,0.9)" fontSize="8" fontFamily="monospace">
+            stroke="rgba(51,90,130,0.25)" strokeWidth={isExpanded ? "2" : "1"} strokeDasharray="3 5" />
+          <text x={margin.left - 8} y={gy(v) + 4} textAnchor="end"
+            fill="rgba(148,163,184,0.8)" fontSize={isExpanded ? "12" : "8"} fontFamily="monospace" fontWeight="600">
             {v >= 1 ? v.toFixed(1) : v.toFixed(2)}
           </text>
         </g>
       ))}
       <polygon points={areaPts} fill="url(#chartGrad)" />
-      <polyline fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" points={linePts} />
+      <polyline fill="none" stroke="#059669" strokeWidth={isExpanded ? "4" : "2"} strokeLinecap="round" strokeLinejoin="round" points={linePts} />
       {data.map(d => {
         const cx = gx(d.year), cy = gy(d.abi);
         const sel = d.year === beforeYear || d.year === afterYear;
         return (
           <g key={d.year}>
-            <text x={cx} y={H - 8} textAnchor="middle" fill="rgba(77,101,128,0.9)"
-              fontSize="9" fontFamily="monospace" fontWeight="700">{d.year}</text>
-            <circle cx={cx} cy={cy} r={sel ? 5 : 3.5}
-              fill={sel ? "#059669" : "#050c14"} stroke={sel ? "#34d399" : "#059669"} strokeWidth={sel ? 2 : 1.5} />
+            <text x={cx} y={H - (isExpanded ? 12 : 8)} textAnchor="middle" fill="rgba(148,163,184,0.8)"
+              fontSize={isExpanded ? "13" : "9"} fontFamily="monospace" fontWeight="700">{d.year}</text>
+            <circle cx={cx} cy={cy} r={sel ? (isExpanded ? 7 : 5) : (isExpanded ? 5 : 3.5)}
+              fill={sel ? "#059669" : "#050c14"} stroke={sel ? "#34d399" : "#059669"} strokeWidth={sel ? (isExpanded ? 3 : 2) : 1.5} />
             {sel && (
-              <text x={cx} y={cy - 9} textAnchor="middle" fill="#34d399"
-                fontSize="8" fontFamily="monospace" fontWeight="700">{d.abi.toFixed(2)}</text>
+              <text x={cx} y={cy - (isExpanded ? 13 : 9)} textAnchor="middle" fill="#34d399"
+                fontSize={isExpanded ? "12" : "8"} fontFamily="monospace" fontWeight="700">{d.abi.toFixed(2)}</text>
             )}
           </g>
         );
@@ -321,104 +323,140 @@ function LineChart({
 }
 
 // ============================================================
-// ENCROACHMENT GROUPED BAR CHART (SVG)
+// ENCROACHMENT CHART — 3-series line chart (crop, built, water) — single axis
 // ============================================================
-function EncroachmentChart({ data }: { data: TimeseriesRecord[] }) {
+function EncroachmentChart({ data, isExpanded = false }: { data: TimeseriesRecord[]; isExpanded?: boolean }) {
   if (!data.length) return null;
-  const margin = { top: 22, right: 14, bottom: 28, left: 36 };
-  const W = 420, H = 160;
+
+  const margin = isExpanded
+    ? { top: 28, right: 16, bottom: 32, left: 52 }
+    : { top: 22, right: 12, bottom: 26, left: 46 };
+  const W = isExpanded ? 680 : 455;
+  const H = isExpanded ? 360 : 165;
   const xW = W - margin.left - margin.right;
   const yH = H - margin.top - margin.bottom;
+  const yBase = margin.top + yH;
 
-  const years = data.map(d => d.year);
-  const crops = data.map(d => d.cropland_pixels * 0.01);
+  // ---- Single unified scale ----
+  const crops     = data.map(d => d.cropland_pixels  * 0.01);
   const buildings = data.map(d => d.buildings_pixels * 0.01);
-  const water = data.map(d => d.water_pixels * 0.01);
-  
-  const maxVal = Math.max(...crops, ...buildings, ...water);
-  const maxScale = maxVal < 1000 ? 1000 : Math.ceil(maxVal / 1000) * 1000;
-  
+  const water     = data.map(d => d.water_pixels     * 0.01);
+  const maxVal    = Math.max(...crops, ...buildings, ...water);
+  const maxScale  = maxVal < 1000 ? 1000 : Math.ceil(maxVal / 1000) * 1000;
+
   const tickCount = 4;
-  const tickStep = maxScale / tickCount;
-  const gridTicks = Array.from({ length: tickCount }, (_, i) => Math.round((i + 1) * tickStep));
-
-  const gx = (index: number) => margin.left + (index / (years.length - 1)) * xW;
   const gy = (v: number) => margin.top + yH - (v / maxScale) * yH;
+  const gx = (i: number) => margin.left + (i / Math.max(data.length - 1, 1)) * xW;
 
-  const barWidth = 8;
-  const groupSpacing = 3;
-  
+  // Build polyline point strings for each series
+  const pts = (vals: number[]) =>
+    vals.map((v, i) => `${gx(i).toFixed(1)},${gy(v).toFixed(1)}`).join(" ");
+  const area = (vals: number[]) =>
+    `${gx(0).toFixed(1)},${yBase} ${pts(vals)} ${gx(vals.length - 1).toFixed(1)},${yBase}`;
+
+  const cropPts  = pts(crops);
+  const builtPts = pts(buildings);
+  const waterPts = pts(water);
+
+  const fmt = (v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`;
+  const sw  = isExpanded ? "2" : "1.5";    // stroke width
+  const fs2 = isExpanded ? 10 : 7.5;
+  const dr  = isExpanded ? 3 : 2.5;        // dot radius
+
+  // Legend line swatch helper
+  const swatch = (x: number, color: string) => (
+    <line x1={x} y1="-3" x2={x + (isExpanded ? 14 : 10)} y2="-3"
+      stroke={color} strokeWidth={sw} strokeLinecap="round" />
+  );
+
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
-      {gridTicks.map(v => (
-        <g key={v}>
-          <line x1={margin.left} y1={gy(v)} x2={W - margin.right} y2={gy(v)}
-            stroke="rgba(51,90,130,0.15)" strokeWidth="0.8" strokeDasharray="3 5" />
-          <text x={margin.left - 5} y={gy(v) + 3} textAnchor="end"
-            fill="rgba(148,163,184,0.7)" fontSize="7.5" fontFamily="monospace">
-            {v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}
-          </text>
-        </g>
-      ))}
-      
-      {data.map((d, i) => {
-        const cx = gx(i);
-        const yBase = margin.top + yH;
-        
-        const hC = gy(d.cropland_pixels * 0.01);
-        const hB = gy(d.buildings_pixels * 0.01);
-        const hW = gy(d.water_pixels * 0.01);
-        
+      <defs>
+        <linearGradient id="ecCropGrad"  x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor="#f59e0b" stopOpacity="0.22" />
+          <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.02" />
+        </linearGradient>
+        <linearGradient id="ecBuiltGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor="#f87171" stopOpacity="0.18" />
+          <stop offset="100%" stopColor="#f87171" stopOpacity="0.02" />
+        </linearGradient>
+        <linearGradient id="ecWaterGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor="#38bdf8" stopOpacity="0.28" />
+          <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+
+      {/* ---- Grid lines + left axis labels ---- */}
+      {Array.from({ length: tickCount }, (_, i) => {
+        const v = Math.round(((i + 1) / tickCount) * maxScale);
+        const y = gy(v);
         return (
-          <g key={d.year}>
-            {/* Cropland (gold) */}
-            <rect
-              x={cx - barWidth*1.5 - groupSpacing}
-              y={hC}
-              width={barWidth}
-              height={Math.max(1, yBase - hC)}
-              fill="#d97706"
-              opacity="0.85"
-              rx="1.5"
-            />
-            {/* Buildings (red) */}
-            <rect
-              x={cx - barWidth/2}
-              y={hB}
-              width={barWidth}
-              height={Math.max(1, yBase - hB)}
-              fill="#dc2626"
-              opacity="0.85"
-              rx="1.5"
-            />
-            {/* Water (blue) */}
-            <rect
-              x={cx + barWidth/2 + groupSpacing}
-              y={hW}
-              width={barWidth}
-              height={Math.max(1, yBase - hW)}
-              fill="#2563eb"
-              opacity="0.85"
-              rx="1.5"
-            />
-            
-            <text x={cx} y={yBase + 14} textAnchor="middle"
-              fill="rgba(148,163,184,0.8)" fontSize="8.5" fontFamily="monospace" fontWeight="700">
-              {d.year}
+          <g key={`g-${i}`}>
+            <line x1={margin.left} y1={y} x2={W - margin.right} y2={y}
+              stroke="rgba(51,90,130,0.13)" strokeWidth="0.8" strokeDasharray="3 5" />
+            <text x={margin.left - 6} y={y + 3.5} textAnchor="end"
+              fill="rgba(148,163,184,0.65)" fontSize={fs2} fontFamily="monospace" fontWeight="600">
+              {fmt(v)}
             </text>
           </g>
         );
       })}
-      
-      <g transform={`translate(${margin.left + 8}, 8)`} style={{ fontSize: 7.5, fontFamily: "monospace", fontWeight: 700 }}>
-        <rect x="0" y="0" width="6" height="6" fill="#d97706" rx="1.5" />
-        <text x="10" y="6" fill="var(--text-secondary)">🌾 Crop (ha)</text>
-        
-        <rect x="75" y="0" width="6" height="6" fill="#dc2626" rx="1.5" />
-        <text x="85" y="6" fill="var(--text-secondary)">🏢 Built (ha)</text>
-        
-        <rect x="150" y="0" width="6" height="6" fill="#2563eb" rx="1.5" />
-        <text x="160" y="6" fill="var(--text-secondary)">💧 Water (ha)</text>
+
+      {/* ---- Y-axis rule ---- */}
+      <line x1={margin.left} y1={margin.top} x2={margin.left} y2={yBase}
+        stroke="rgba(51,90,130,0.25)" strokeWidth="1" />
+
+      {/* ---- Area fills (back to front: crop → built → water) ---- */}
+      <polygon points={area(crops)}     fill="url(#ecCropGrad)"  />
+      <polygon points={area(buildings)} fill="url(#ecBuiltGrad)" />
+      <polygon points={area(water)}     fill="url(#ecWaterGrad)" />
+
+      {/* ---- Polylines ---- */}
+      <polyline fill="none" stroke="#f59e0b" strokeWidth={sw}
+        strokeLinecap="round" strokeLinejoin="round" points={cropPts} />
+      <polyline fill="none" stroke="#f87171" strokeWidth={sw}
+        strokeLinecap="round" strokeLinejoin="round" points={builtPts} />
+      <polyline fill="none" stroke="#38bdf8" strokeWidth={sw}
+        strokeLinecap="round" strokeLinejoin="round" points={waterPts} />
+
+      {/* ---- Dots (every 2nd point to avoid clutter, always first+last) ---- */}
+      {data.map((d, i) => {
+        const show = i === 0 || i === data.length - 1 || i % 2 === 0;
+        if (!show) return null;
+        return (
+          <g key={`dots-${d.year}`}>
+            <circle cx={gx(i)} cy={gy(crops[i])}     r={dr} fill="#f59e0b" stroke="#fef3c7" strokeWidth="0.8" />
+            <circle cx={gx(i)} cy={gy(buildings[i])} r={dr} fill="#f87171" stroke="#fee2e2" strokeWidth="0.8" />
+            <circle cx={gx(i)} cy={gy(water[i])}     r={dr} fill="#38bdf8" stroke="#e0f2fe" strokeWidth="0.8" />
+          </g>
+        );
+      })}
+
+      {/* ---- X-axis year labels (every 2nd) ---- */}
+      {data.map((d, i) => (
+        (i % 2 === 0 || data.length <= 10) && (
+          <text key={`xl-${d.year}`}
+            x={gx(i)} y={yBase + (isExpanded ? 16 : 13)} textAnchor="middle"
+            fill="rgba(148,163,184,0.75)" fontSize={fs2} fontFamily="monospace" fontWeight="700">
+            {d.year}
+          </text>
+        )
+      ))}
+
+      {/* ---- Legend ---- */}
+      <g transform={`translate(${margin.left + 2}, ${margin.top - 13})`}
+         style={{ fontFamily: "monospace", fontWeight: 700, fontSize: fs2 }}>
+        {swatch(0, "#f59e0b")}
+        <circle cx={isExpanded ? 7 : 5} cy="-3" r={isExpanded ? 2.5 : 2} fill="#f59e0b" stroke="#fef3c7" strokeWidth="0.6" />
+        <text x={isExpanded ? 18 : 14} y="0" fill="rgba(212,174,92,0.9)">Cropland</text>
+
+        {swatch(isExpanded ? 90 : 73, "#f87171")}
+        <circle cx={isExpanded ? 97 : 78} cy="-3" r={isExpanded ? 2.5 : 2} fill="#f87171" stroke="#fee2e2" strokeWidth="0.6" />
+        <text x={isExpanded ? 108 : 87} y="0" fill="rgba(248,113,113,0.9)">Built-up</text>
+
+        {swatch(isExpanded ? 180 : 147, "#38bdf8")}
+        <circle cx={isExpanded ? 187 : 152} cy="-3" r={isExpanded ? 2.5 : 2} fill="#38bdf8" stroke="#e0f2fe" strokeWidth="0.6" />
+        <text x={isExpanded ? 198 : 161} y="0" fill="rgba(56,189,248,0.9)">Water</text>
       </g>
     </svg>
   );
@@ -436,11 +474,11 @@ export default function Home() {
   const [afterYear, setAfterYear] = useState<number>(2025);
   const [vizMode, setVizMode] = useState<string>("AI Land Use Classification");
   const [sliderValue, setSliderValue] = useState<number>(50);
-  const [opacity, setOpacity] = useState<number>(0.9);
 
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState<boolean>(false);
   const [apiWarning, setApiWarning] = useState<string | null>(null);
+  const [expandedChart, setExpandedChart] = useState<"line" | "bar" | null>(null);
 
   // ---- Fetch zones ----
   useEffect(() => {
@@ -552,6 +590,7 @@ export default function Home() {
     const z = zones.find(z => z.key === key);
     if (z) { setBeforeYear(z.years[0]); setAfterYear(z.years[z.years.length - 1]); }
     setActiveTab("comparison");
+    setVizMode("AI Land Use Classification");
   };
 
   const currentZone = zones.find(z => z.key === selectedZoneKey) || null;
@@ -665,7 +704,7 @@ export default function Home() {
       ================================================== */}
       <main style={{
         flex: 1, display: "grid",
-        gridTemplateColumns: "1fr 420px",
+        gridTemplateColumns: "1fr 460px",
         minHeight: 0, overflow: "hidden",
       }}>
 
@@ -694,8 +733,10 @@ export default function Home() {
             <button
               className={`tab-btn ${activeTab === "comparison" ? "active" : ""}`}
               onClick={() => {
-                if (!selectedZoneKey && zones.length > 0) handleSelectZone(zones[0].key);
-                else setActiveTab("comparison");
+                if (!selectedZoneKey && zones.length > 0) {
+                  handleSelectZone(zones[0].key);
+                }
+                setActiveTab("comparison");
               }}>
               Image Comparison
             </button>
@@ -715,7 +756,6 @@ export default function Home() {
                 afterImageUrl={getOverlayUrl("after")}
                 beforeYear={beforeYear}
                 afterYear={afterYear}
-                opacity={opacity}
                 isMask={vizMode === "AI Land Use Classification" || vizMode === "Infrastructure Encroachment Heatmap"}
                 sliderValue={sliderValue}
                 onSliderChange={setSliderValue}
@@ -788,21 +828,7 @@ export default function Home() {
                 </select>
               </div>
 
-              {/* Opacity (only relevant for image comparison) */}
-              {activeTab === "comparison" && (
-                <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                    <span className="section-label" style={{ color: "var(--text-secondary)" }}>Image Opacity</span>
-                    <span style={{
-                      fontSize: 10, fontFamily: "monospace", fontWeight: 700,
-                      color: "var(--emerald-400)", background: "var(--emerald-dim)",
-                      border: "1px solid rgba(5,150,105,0.25)", borderRadius: 4, padding: "1px 6px",
-                    }}>{Math.round(opacity * 100)}%</span>
-                  </div>
-                  <input type="range" min="20" max="100" value={opacity * 100}
-                    onChange={e => setOpacity(Number(e.target.value) / 100)} />
-                </div>
-              )}
+
             </>)}
           </div>
 
@@ -951,19 +977,33 @@ export default function Home() {
                 </div>
 
                 {/* Trend chart */}
-                <div className="glass-card" style={{ padding: "12px 14px" }}>
+                <motion.div
+                  layoutId="line-chart-card"
+                  onClick={() => setExpandedChart("line")}
+                  whileHover={{ scale: 1.02, y: -2 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="glass-card"
+                  style={{ padding: "12px 14px", cursor: "pointer" }}
+                >
                   <span className="section-label" style={{ display: "block", marginBottom: 8 }}>
                     ABI Ratio Trend Timeline
                   </span>
                   <LineChart data={analysis.timeseries} beforeYear={beforeYear} afterYear={afterYear} />
-                </div>
+                </motion.div>
 
-                <div className="glass-card" style={{ padding: "12px 14px" }}>
+                <motion.div
+                  layoutId="bar-chart-card"
+                  onClick={() => setExpandedChart("bar")}
+                  whileHover={{ scale: 1.02, y: -2 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="glass-card"
+                  style={{ padding: "12px 14px", cursor: "pointer" }}
+                >
                   <span className="section-label" style={{ display: "block", marginBottom: 8 }}>
                     Farmland & Water Loss vs. Urban Expansion
                   </span>
                   <EncroachmentChart data={analysis.timeseries} />
-                </div>
+                </motion.div>
 
                 {/* Land cover transitions */}
                 <div className="glass-card" style={{ overflow: "hidden" }}>
@@ -1009,6 +1049,92 @@ export default function Home() {
           </div>
         </section>
       </main>
+
+      {/* Expanded Chart Lightbox Overlay */}
+      <AnimatePresence>
+        {expandedChart && analysis && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setExpandedChart(null)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(3, 8, 14, 0.88)",
+                backdropFilter: "blur(12px)",
+                zIndex: 999,
+                cursor: "pointer",
+              }}
+            />
+
+            {/* Modal */}
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 1000,
+                pointerEvents: "none",
+              }}
+            >
+              <motion.div
+                layoutId={expandedChart === "line" ? "line-chart-card" : "bar-chart-card"}
+                style={{
+                  pointerEvents: "auto",
+                  width: "95%",
+                  maxWidth: 860,
+                  background: "var(--bg-surface)",
+                  border: "1px solid var(--border-dim)",
+                  borderRadius: 16,
+                  padding: "32px 36px",
+                  boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 30px rgba(5, 150, 105, 0.15)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 16,
+                }}
+              >
+                {/* Header */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span className="section-label" style={{ fontSize: 13, letterSpacing: "0.06em", color: "var(--text-primary)" }}>
+                    {expandedChart === "line" ? "ABI Ratio Trend Timeline" : "Farmland & Water Loss vs. Urban Expansion"}
+                  </span>
+                  <button
+                    onClick={() => setExpandedChart(null)}
+                    style={{
+                      background: "rgba(255,255,255,0.05)",
+                      border: "1px solid var(--border-dim)",
+                      color: "var(--text-secondary)",
+                      borderRadius: "50%",
+                      width: 28,
+                      height: 28,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: "pointer",
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Expanded Chart */}
+                <div style={{ flex: 1, minHeight: 0 }}>
+                  {expandedChart === "line" ? (
+                    <LineChart data={analysis.timeseries} beforeYear={beforeYear} afterYear={afterYear} isExpanded={true} />
+                  ) : (
+                    <EncroachmentChart data={analysis.timeseries} isExpanded={true} />
+                  )}
+                </div>
+              </motion.div>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
