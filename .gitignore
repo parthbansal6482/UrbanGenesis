@@ -81,3 +81,9 @@ desktop.ini
 
 # ── Misc cache ────────────────────────────────────────────────────────────────
 .cache/
+
+# ── Scratch / temporary analysis scripts ─────────────────────────────────────
+scratch/
+
+# ── macOS metadata inside committed directories ───────────────────────────────
+**/.DS_Store

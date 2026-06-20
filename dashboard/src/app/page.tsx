@@ -239,12 +239,13 @@ const CLASS_COLORS: Record<string, string> = {
   Buildings: "#dc2626",
   Cropland: "#d97706",
   "Dense Vegetation": "#16a34a",
-  "Water Bodies": "#2563eb",
+  "Water Bodies": "#1E64C8",  // matches app.py CLASS_INFO color 4
   "Bare Soil": "#92400e",
 };
 
 function gradeClass(g: string): string {
   if (g === "F") return "f";
+  if (g === "D") return "d";
   if (g === "C") return "c";
   if (g === "B") return "b";
   return "a";
@@ -478,7 +479,7 @@ export default function Home() {
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState<boolean>(false);
   const [apiWarning, setApiWarning] = useState<string | null>(null);
-  const [expandedChart, setExpandedChart] = useState<"line" | "bar" | null>(null);
+  const [expandedChart, setExpandedChart] = useState<"line" | "encroachment" | null>(null);
 
   // ---- Fetch zones ----
   useEffect(() => {
@@ -992,8 +993,8 @@ export default function Home() {
                 </motion.div>
 
                 <motion.div
-                  layoutId="bar-chart-card"
-                  onClick={() => setExpandedChart("bar")}
+                  layoutId="encroachment-chart-card"
+                  onClick={() => setExpandedChart("encroachment")}
                   whileHover={{ scale: 1.02, y: -2 }}
                   whileTap={{ scale: 0.98 }}
                   className="glass-card"
@@ -1083,7 +1084,7 @@ export default function Home() {
               }}
             >
               <motion.div
-                layoutId={expandedChart === "line" ? "line-chart-card" : "bar-chart-card"}
+                layoutId={expandedChart === "line" ? "line-chart-card" : "encroachment-chart-card"}
                 style={{
                   pointerEvents: "auto",
                   width: "95%",

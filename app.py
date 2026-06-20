@@ -69,6 +69,17 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Cache-Control middleware — serve precomputed PNGs/JSONs with a 24-hour browser cache
+from fastapi import Request
+from fastapi.responses import Response
+
+@app.middleware("http")
+async def add_cache_control(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/") and response.status_code == 200:
+        response.headers["Cache-Control"] = "public, max-age=86400, immutable"
+    return response
+
 # CORS setup
 app.add_middleware(
     CORSMiddleware,
@@ -407,4 +418,5 @@ def analyse_zone(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    _dev_mode = os.getenv("UVICORN_RELOAD", "false").lower() == "true"
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=_dev_mode)

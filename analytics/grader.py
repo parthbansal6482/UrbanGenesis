@@ -12,7 +12,7 @@ from typing import List, Dict
 GRADE_THRESHOLDS = [
     (2.0, "A", "Healthy Buffer",
      "Cropland well-protected. Strong agricultural buffer intact. No MRV flags."),
-    (1.0, "B", "Moderate Risk",
+    (1.0, "B", "Stable Buffer",
      "Buffer shrinking but stable. Recommend annual satellite monitoring."),
     (0.5, "C", "Elevated Risk",
      "Urban boundary within encroachment range of active cropland. "

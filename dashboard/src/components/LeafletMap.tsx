@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useCallback } from "react";
+import type { Map as LMap, Marker } from "leaflet";
 
 interface ZoneData {
   key: string;
@@ -21,27 +22,26 @@ interface LeafletMapProps {
 }
 
 function gradeColor(g: string): string {
-  if (g === "F") return "#dc2626";
-  if (g === "C") return "#f59e0b";
-  if (g === "B") return "#38bdf8";
-  return "#34d399";
+  if (g === "F") return "#dc2626";   // Critical — red
+  if (g === "D") return "#f97316";   // High Risk — orange
+  if (g === "C") return "#f59e0b";   // Elevated — amber
+  if (g === "B") return "#38bdf8";   // Stable Buffer — sky
+  return "#34d399";                  // Healthy (A) — emerald
 }
 
 export default function LeafletMap({ zones, selectedZoneKey, onSelectZone }: LeafletMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mapInstanceRef = useRef<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const LRef = useRef<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const markersRef = useRef<Map<string, any>>(new Map());
+  const LRef = useRef<any>(null); // holds dynamic import of whole leaflet namespace
+  const mapInstanceRef = useRef<LMap | null>(null);
+  const markersRef = useRef<globalThis.Map<string, Marker>>(new globalThis.Map());
   const onSelectRef = useRef(onSelectZone);
   onSelectRef.current = onSelectZone;
   const initedRef = useRef(false);
 
   // ---------- Marker HTML ----------
   const buildMarkerHtml = useCallback((zone: ZoneData, selected: boolean) => {
-    const isHighRisk = zone.latest_grade === "F" || zone.latest_grade === "C";
+    const isHighRisk = zone.latest_grade === "F" || zone.latest_grade === "D" || zone.latest_grade === "C";
     const color = isHighRisk ? "#dc2626" : "#059669";
     const bright = isHighRisk ? "#f87171" : "#34d399";
     const gc = gradeColor(zone.latest_grade);
@@ -112,7 +112,7 @@ export default function LeafletMap({ zones, selectedZoneKey, onSelectZone }: Lea
         iconAnchor: [Math.round(sz / 2), Math.round(sz / 2)],
       });
 
-      const marker = L.marker([lat, lon], { icon, zIndexOffset: selected ? 1000 : 0 });
+      const marker: Marker = L.marker([lat, lon], { icon, zIndexOffset: selected ? 1000 : 0 });
       marker.on("click", () => onSelectRef.current(zone.key));
       marker.addTo(map);
       markersRef.current.set(zone.key, marker);
@@ -129,8 +129,7 @@ export default function LeafletMap({ zones, selectedZoneKey, onSelectZone }: Lea
       if (!containerRef.current) return;
 
       // If Leaflet already owns this div (HMR / strict mode race), clear it first
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const el = containerRef.current as any;
+      const el = containerRef.current as HTMLDivElement & { _leaflet_id?: number };
       if (el._leaflet_id != null) {
         delete el._leaflet_id;
       }
@@ -191,38 +190,6 @@ export default function LeafletMap({ zones, selectedZoneKey, onSelectZone }: Lea
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      <style>{`
-        @keyframes fgPulse {
-          0%   { transform: scale(0.8);  opacity: 0.5; }
-          50%  { transform: scale(1.2);  opacity: 0.1; }
-          100% { transform: scale(0.8);  opacity: 0.5; }
-        }
-        .leaflet-control-zoom a {
-          background: rgba(5,12,20,0.92) !important;
-          color: #94a8c0 !important;
-          border-color: rgba(51,90,130,0.35) !important;
-          font-size: 16px !important;
-          width: 28px !important; height: 28px !important;
-          line-height: 28px !important;
-        }
-        .leaflet-control-zoom a:hover {
-          background: rgba(5,150,105,0.15) !important;
-          color: #34d399 !important;
-          border-color: rgba(5,150,105,0.4) !important;
-        }
-        .leaflet-bar { border: 1px solid rgba(51,90,130,0.35) !important; box-shadow: none !important; }
-        .leaflet-control-attribution {
-          background: rgba(5,12,20,0.8) !important;
-          color: rgba(51,90,130,0.7) !important;
-          font-size: 9px !important;
-          backdrop-filter: blur(4px);
-          border-radius: 4px 0 0 0 !important;
-        }
-        .leaflet-control-attribution a { color: #34d399 !important; }
-        .leaflet-container { background: #050c14 !important; }
-        .leaflet-tile-pane { opacity: 0.92; }
-      `}</style>
-
       <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
 
       {/* HUD top */}
@@ -253,11 +220,15 @@ export default function LeafletMap({ zones, selectedZoneKey, onSelectZone }: Lea
         }}>
           <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#dc2626", display: "inline-block" }} />
-            Grade F / C (High Risk)
+            Grade F / D (Critical — High Risk)
+          </span>
+          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#f59e0b", display: "inline-block" }} />
+            Grade C (Elevated Risk)
           </span>
           <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#059669", display: "inline-block" }} />
-            Grade A / B (Stable)
+            Grade A / B (Stable Buffer)
           </span>
           <span>Scroll to zoom · Drag to pan · Click to audit</span>
         </div>
