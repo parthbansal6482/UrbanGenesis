@@ -88,23 +88,3 @@ def detect_urban_expansion(
         ),
     }
 
-
-def compute_cropland_loss_ha(
-    mask_before: np.ndarray,
-    mask_after: np.ndarray,
-    resolution_m: float = 10.0,
-) -> float:
-    """
-    Convenience wrapper around analytics.abi.compute_cropland_loss_ha.
-    Compute hectares of cropland (class 3) lost between two masks.
-
-    Args:
-        mask_before: np.ndarray (H, W) — earlier year mask
-        mask_after:  np.ndarray (H, W) — later year mask
-        resolution_m: metres per pixel (default: 10.0 for Sentinel-2)
-
-    Returns:
-        float — hectares of cropland lost (0.0 if none lost or cropland gained)
-    """
-    from analytics.abi import compute_cropland_loss_ha as _compute
-    return _compute(mask_before, mask_after, resolution_m)

@@ -62,20 +62,13 @@ const KASHMIR_OUTLINE: [number, number][] = [
   [76.0, 29.0], [75.5, 27.5], [74.5, 26.5],
 ];
 
-// Grade label colours
-function gradeColor(g: string): string {
-  if (g === "F") return "#dc2626";
-  if (g === "C") return "#f59e0b";
-  if (g === "B") return "#38bdf8";
-  return "#34d399";
-}
-
 // ============================================================
 // COMPONENT
 // ============================================================
 export default function MapRegionView({ zones, selectedZoneKey, onSelectZone }: MapRegionViewProps) {
   const [hovered, setHovered] = useState<string | null>(null);
   const [viewBox, setViewBox] = useState({ x: 0, y: 0, w: SVG_W, h: SVG_H });
+  const [isGrabbing, setIsGrabbing] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const isPanning = useRef(false);
   const panStart = useRef({ mx: 0, my: 0, vx: 0, vy: 0 });
@@ -114,6 +107,7 @@ export default function MapRegionView({ zones, selectedZoneKey, onSelectZone }: 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     if ((e.target as Element).closest("[data-zone]")) return;
     isPanning.current = true;
+    setIsGrabbing(true);
     panStart.current = { mx: e.clientX, my: e.clientY, vx: viewBox.x, vy: viewBox.y };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   }, [viewBox]);
@@ -130,7 +124,10 @@ export default function MapRegionView({ zones, selectedZoneKey, onSelectZone }: 
     }));
   }, [viewBox.w, viewBox.h]);
 
-  const onPointerUp = useCallback(() => { isPanning.current = false; }, []);
+  const onPointerUp = useCallback(() => {
+    isPanning.current = false;
+    setIsGrabbing(false);
+  }, []);
 
   // Reset zoom
   const resetView = () => setViewBox({ x: 0, y: 0, w: SVG_W, h: SVG_H });
@@ -144,7 +141,7 @@ export default function MapRegionView({ zones, selectedZoneKey, onSelectZone }: 
       style={{
         position: "relative", width: "100%", height: "100%",
         background: "var(--bg-base)", overflow: "hidden",
-        cursor: isPanning.current ? "grabbing" : "grab",
+        cursor: isGrabbing ? "grabbing" : "grab",
         userSelect: "none",
       }}
       onPointerDown={onPointerDown}

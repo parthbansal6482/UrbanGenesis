@@ -64,13 +64,20 @@ def detect_encroachment_alert(
         bool — True if encroachment alert should be raised
     """
     years = [r["year"] for r in timeseries]
-    abis = [r["abi"] for r in timeseries]
+    abis  = [r["abi"]  for r in timeseries]
+    n = len(years)
 
-    for i, (y_start, abi_start) in enumerate(zip(years, abis)):
-        for j, (y_end, abi_end) in enumerate(zip(years, abis)):
-            if j <= i:
-                continue
-            if (y_end - y_start) <= window_years and abi_start > 0:
+    # Single forward pass: for each end-point j, scan backwards within the
+    # window_years span and stop as soon as we exit the window.
+    # Complexity: O(n × k) where k = window size in data points (≪ n in practice).
+    for j in range(1, n):
+        y_end, abi_end = years[j], abis[j]
+        for i in range(j - 1, -1, -1):
+            y_start = years[i]
+            if y_end - y_start > window_years:
+                break  # all earlier points are also outside the window
+            abi_start = abis[i]
+            if abi_start > 0:
                 pct_drop = (abi_start - abi_end) / abi_start
                 if pct_drop >= drop_threshold:
                     return True

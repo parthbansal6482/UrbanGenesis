@@ -2,6 +2,7 @@ import os
 import json
 import math
 import logging
+import functools
 import yaml
 from pathlib import Path
 from typing import List, Optional
@@ -9,6 +10,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from analytics.grader import assign_grade
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -105,6 +107,7 @@ def safe_float(v, default=0.0):
     except (TypeError, ValueError):
         return default
 
+@functools.lru_cache(maxsize=16)
 def load_zone_verdict(zone_key: str) -> Optional[dict]:
     verdict_path = PRECOMPUTED_DIR / zone_key / "verdict.json"
     if not verdict_path.exists():
@@ -177,7 +180,11 @@ def get_zones():
             "cropland_loss_ha": cropland_loss_ha,
             "encroachment_alert": encroachment_alert
         })
-    return zones_list
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        content=zones_list,
+        headers={"Cache-Control": "public, max-age=300"},
+    )
 
 @app.get("/api/analyse")
 def analyse_zone(
@@ -205,11 +212,11 @@ def analyse_zone(
             timeseries.append({
                 "year": yr,
                 "abi": abi_val,
-                "cropland_pixels": int(c_pct * 1000),
-                "vegetation_pixels": int(v_pct * 1000),
-                "water_pixels": int(w_pct * 1000),
-                "buildings_pixels": int(b_pct * 1000),
-                "soil_pixels": int(s_pct * 1000),
+                "cropland_pixels": int(c_pct * 100_000),
+                "vegetation_pixels": int(v_pct * 100_000),
+                "water_pixels": int(w_pct * 100_000),
+                "buildings_pixels": int(b_pct * 100_000),
+                "soil_pixels": int(s_pct * 100_000),
                 "cropland_pct": c_pct,
                 "vegetation_pct": v_pct,
                 "water_pct": w_pct,
@@ -240,6 +247,9 @@ def analyse_zone(
     after_yr = after if after in available_years else available_years[-1]
 
     if before_yr > after_yr:
+        logger.warning(
+            f"Zone '{zone}': before_yr ({before_yr}) > after_yr ({after_yr}), swapping silently."
+        )
         before_yr, after_yr = after_yr, before_yr
 
     rec_before = next((r for r in timeseries if r["year"] == before_yr), None)
@@ -306,7 +316,6 @@ def analyse_zone(
         abi_change_pct = round(((after_abi - before_abi) / before_abi) * 100.0, 1)
 
     # Dynamic grade assignment based on current Audited Year's ABI
-    from analytics.grader import assign_grade
     grade_info = assign_grade(after_abi)
     grade = grade_info.get("grade", "N/A")
     label = grade_info.get("label", "")

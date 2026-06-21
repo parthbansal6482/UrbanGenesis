@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -257,31 +257,46 @@ function gradeClass(g: string): string {
 function LineChart({
   data, beforeYear, afterYear, isExpanded = false,
 }: { data: TimeseriesRecord[]; beforeYear: number; afterYear: number; isExpanded?: boolean }) {
+  // Memoize all SVG coordinate computations — only recompute when data or
+  // isExpanded changes (not on every parent re-render).
+  const { margin, W, H, gx, gy, gridTicks, linePts, areaPts } = useMemo(() => {
+    const margin = isExpanded
+      ? { top: 28, right: 24, bottom: 36, left: 56 }
+      : { top: 18, right: 14, bottom: 28, left: 32 };
+    const W = isExpanded ? 800 : 420;
+    const H = isExpanded ? 360 : 150;
+    const xW = W - margin.left - margin.right;
+    const yH = H - margin.top - margin.bottom;
+
+    if (!data.length) {
+      return {
+        margin, W, H, yH,
+        gx: () => 0, gy: () => 0,
+        gridTicks: [], linePts: "", areaPts: "", years: [],
+      };
+    }
+
+    const years = data.map(d => d.year);
+    const abis  = data.map(d => d.abi);
+    const rawMax = Math.max(...abis);
+    const maxAbi = rawMax < 2 ? Math.ceil(rawMax * 10) / 10 + 0.1
+      : rawMax < 5 ? Math.ceil(rawMax) + 0.5
+      : Math.ceil(rawMax / 2) * 2 + 1;
+
+    const tickCount = 4;
+    const tickStep = maxAbi / tickCount;
+    const gridTicks = Array.from({ length: tickCount }, (_, i) => +((i + 1) * tickStep).toFixed(2));
+
+    const gx = (yr: number) => margin.left + (years.indexOf(yr) / (years.length - 1)) * xW;
+    const gy = (v: number) => margin.top + yH - (v / maxAbi) * yH;
+
+    const linePts = data.map(d => `${gx(d.year).toFixed(1)},${gy(d.abi).toFixed(1)}`).join(" ");
+    const areaPts = `${gx(years[0])},${margin.top + yH} ${linePts} ${gx(years[years.length - 1])},${margin.top + yH}`;
+
+    return { margin, W, H, yH, gx, gy, gridTicks, linePts, areaPts, years };
+  }, [data, isExpanded]);
+
   if (!data.length) return null;
-  const margin = isExpanded
-    ? { top: 28, right: 24, bottom: 36, left: 56 }
-    : { top: 18, right: 14, bottom: 28, left: 32 };
-  const W = isExpanded ? 800 : 420;
-  const H = isExpanded ? 360 : 150;
-  const xW = W - margin.left - margin.right;
-  const yH = H - margin.top - margin.bottom;
-
-  const years = data.map(d => d.year);
-  const abis = data.map(d => d.abi);
-  const rawMax = Math.max(...abis);
-  const maxAbi = rawMax < 2 ? Math.ceil(rawMax * 10) / 10 + 0.1
-    : rawMax < 5 ? Math.ceil(rawMax) + 0.5
-    : Math.ceil(rawMax / 2) * 2 + 1;
-
-  const tickCount = 4;
-  const tickStep = maxAbi / tickCount;
-  const gridTicks = Array.from({ length: tickCount }, (_, i) => +((i + 1) * tickStep).toFixed(2));
-
-  const gx = (yr: number) => margin.left + (years.indexOf(yr) / (years.length - 1)) * xW;
-  const gy = (v: number) => margin.top + yH - (v / maxAbi) * yH;
-
-  const linePts = data.map(d => `${gx(d.year).toFixed(1)},${gy(d.abi).toFixed(1)}`).join(" ");
-  const areaPts = `${gx(years[0])},${margin.top + yH} ${linePts} ${gx(years[years.length - 1])},${margin.top + yH}`;
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
@@ -327,37 +342,52 @@ function LineChart({
 // ENCROACHMENT CHART — 3-series line chart (crop, built, water) — single axis
 // ============================================================
 function EncroachmentChart({ data, isExpanded = false }: { data: TimeseriesRecord[]; isExpanded?: boolean }) {
+  // Memoize all coordinate & series computations — only recompute when data
+  // or isExpanded changes (not on every parent re-render).
+  const { margin, W, H, yBase, gx, gy, crops, buildings, water,
+          cropPts, builtPts, waterPts, area, maxScale } = useMemo(() => {
+    const margin = isExpanded
+      ? { top: 28, right: 16, bottom: 32, left: 52 }
+      : { top: 22, right: 12, bottom: 26, left: 46 };
+    const W = isExpanded ? 680 : 455;
+    const H = isExpanded ? 360 : 165;
+    const xW = W - margin.left - margin.right;
+    const yH = H - margin.top - margin.bottom;
+    const yBase = margin.top + yH;
+
+    if (!data.length) {
+      return {
+        margin, W, H, yBase,
+        crops: [], buildings: [], water: [],
+        cropPts: "", builtPts: "", waterPts: "", area: () => "",
+        maxScale: 1000,
+        gx: () => 0, gy: () => 0,
+      };
+    }
+
+    const crops     = data.map(d => d.cropland_pixels  * 0.01);
+    const buildings = data.map(d => d.buildings_pixels * 0.01);
+    const water     = data.map(d => d.water_pixels     * 0.01);
+    const maxVal    = Math.max(...crops, ...buildings, ...water);
+    const maxScale  = maxVal < 1000 ? 1000 : Math.ceil(maxVal / 1000) * 1000;
+
+    const gx = (i: number) => margin.left + (i / Math.max(data.length - 1, 1)) * xW;
+    const gy = (v: number) => margin.top + yH - (v / maxScale) * yH;
+
+    const pts = (vals: number[]) =>
+      vals.map((v, i) => `${gx(i).toFixed(1)},${gy(v).toFixed(1)}`).join(" ");
+    const area = (vals: number[]) =>
+      `${gx(0).toFixed(1)},${yBase} ${pts(vals)} ${gx(vals.length - 1).toFixed(1)},${yBase}`;
+
+    return {
+      margin, W, H, yBase, gx, gy, crops, buildings, water,
+      cropPts: pts(crops), builtPts: pts(buildings), waterPts: pts(water), area, maxScale,
+    };
+  }, [data, isExpanded]);
+
   if (!data.length) return null;
 
-  const margin = isExpanded
-    ? { top: 28, right: 16, bottom: 32, left: 52 }
-    : { top: 22, right: 12, bottom: 26, left: 46 };
-  const W = isExpanded ? 680 : 455;
-  const H = isExpanded ? 360 : 165;
-  const xW = W - margin.left - margin.right;
-  const yH = H - margin.top - margin.bottom;
-  const yBase = margin.top + yH;
-
-  // ---- Single unified scale ----
-  const crops     = data.map(d => d.cropland_pixels  * 0.01);
-  const buildings = data.map(d => d.buildings_pixels * 0.01);
-  const water     = data.map(d => d.water_pixels     * 0.01);
-  const maxVal    = Math.max(...crops, ...buildings, ...water);
-  const maxScale  = maxVal < 1000 ? 1000 : Math.ceil(maxVal / 1000) * 1000;
-
   const tickCount = 4;
-  const gy = (v: number) => margin.top + yH - (v / maxScale) * yH;
-  const gx = (i: number) => margin.left + (i / Math.max(data.length - 1, 1)) * xW;
-
-  // Build polyline point strings for each series
-  const pts = (vals: number[]) =>
-    vals.map((v, i) => `${gx(i).toFixed(1)},${gy(v).toFixed(1)}`).join(" ");
-  const area = (vals: number[]) =>
-    `${gx(0).toFixed(1)},${yBase} ${pts(vals)} ${gx(vals.length - 1).toFixed(1)},${yBase}`;
-
-  const cropPts  = pts(crops);
-  const builtPts = pts(buildings);
-  const waterPts = pts(water);
 
   const fmt = (v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`;
   const sw  = isExpanded ? "2" : "1.5";    // stroke width
@@ -492,6 +522,7 @@ export default function Home() {
   // ---- Fetch analysis ----
   useEffect(() => {
     if (!selectedZoneKey) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Set loading state synchronously when starting the analysis fetch to prevent UI lag/inconsistency
     setLoadingAnalysis(true);
     fetch(`${API_ORIGIN}/api/analyse?zone=${selectedZoneKey}&before=${beforeYear}&after=${afterYear}`)
       .then(r => { if (!r.ok) throw new Error("offline"); return r.json(); })
@@ -855,9 +886,18 @@ export default function Home() {
                 </p>
               </div>
             ) : loadingAnalysis ? (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 10 }}>
-                <div className="spinner" />
-                <span className="section-label" style={{ color: "var(--text-muted)" }}>Fetching Sentinel Bands…</span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div className="skeleton" style={{ height: 86, borderRadius: 10 }} />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div className="skeleton" style={{ height: 76, borderRadius: 10 }} />
+                  <div className="skeleton" style={{ height: 76, borderRadius: 10 }} />
+                  <div className="skeleton" style={{ height: 76, borderRadius: 10 }} />
+                  <div className="skeleton" style={{ height: 76, borderRadius: 10 }} />
+                  <div className="skeleton" style={{ height: 56, borderRadius: 10, gridColumn: "1 / -1" }} />
+                </div>
+                <div className="skeleton" style={{ height: 52, borderRadius: 10 }} />
+                <div className="skeleton" style={{ height: 110, borderRadius: 10 }} />
+                <div className="skeleton" style={{ height: 110, borderRadius: 10 }} />
               </div>
             ) : analysis ? (
               <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 14 }}>

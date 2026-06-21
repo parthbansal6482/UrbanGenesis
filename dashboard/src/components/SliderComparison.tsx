@@ -142,6 +142,7 @@ export default function SliderComparison({
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset loading state to true synchronously when inputs change to display loading spinner
     setLoadingBefore(true);
     processImage(beforeImageUrl, beforeYear, isMask, src => {
       setBeforeSrc(src);
@@ -150,6 +151,7 @@ export default function SliderComparison({
   }, [beforeImageUrl, beforeYear, isMask, processImage]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset loading state to true synchronously when inputs change to display loading spinner
     setLoadingAfter(true);
     processImage(afterImageUrl, afterYear, isMask, src => {
       setAfterSrc(src);

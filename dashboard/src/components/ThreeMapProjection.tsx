@@ -343,6 +343,7 @@ export default function ThreeMapProjection({
       scene.clear();
       renderer.dispose();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only re-initialize Three.js scene when assets change, not on slider/opacity updates
   }, [beforeImageUrl, afterImageUrl, isMask]);
 
   return (

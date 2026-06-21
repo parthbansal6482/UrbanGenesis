@@ -36,7 +36,9 @@ export default function LeafletMap({ zones, selectedZoneKey, onSelectZone }: Lea
   const mapInstanceRef = useRef<LMap | null>(null);
   const markersRef = useRef<globalThis.Map<string, Marker>>(new globalThis.Map());
   const onSelectRef = useRef(onSelectZone);
-  onSelectRef.current = onSelectZone;
+  useEffect(() => {
+    onSelectRef.current = onSelectZone;
+  }, [onSelectZone]);
   const initedRef = useRef(false);
 
   // ---------- Marker HTML ----------

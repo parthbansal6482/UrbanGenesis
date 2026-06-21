@@ -111,11 +111,21 @@ def compute_cropland_loss_ha(
     Args:
         mask_before: np.ndarray (H, W) — earlier year mask
         mask_after:  np.ndarray (H, W) — later year mask
-        resolution_m: metres per pixel (Sentinel-2 = 10m)
+        resolution_m: pixel size in METRES (not km, not degrees).
+                      Sentinel-2 native = 10.0 m.
+                      Landsat-8 = 30.0 m.
+                      Must satisfy 0.5 <= resolution_m <= 100.
 
     Returns:
         float — hectares of cropland lost (0.0 if none lost)
+
+    Raises:
+        AssertionError: if resolution_m is outside the valid metre range.
     """
+    assert 0.5 <= resolution_m <= 100, (
+        f"resolution_m={resolution_m} is out of range [0.5, 100]. "
+        "Value must be in metres (e.g. 10.0 for Sentinel-2, 30.0 for Landsat)."
+    )
     cropland_before = (mask_before == CROPLAND_CLASS).sum()
     cropland_after = (mask_after == CROPLAND_CLASS).sum()
     lost_pixels = max(0, int(cropland_before) - int(cropland_after))

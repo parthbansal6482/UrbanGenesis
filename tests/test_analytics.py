@@ -3,8 +3,8 @@ import pytest
 from analytics.change_detection import (
     compute_transition_matrix,
     detect_urban_expansion,
-    compute_cropland_loss_ha,
 )
+from analytics.abi import compute_cropland_loss_ha
 from analytics.abi import compute_abi
 from analytics.grader import assign_grade, detect_encroachment_alert, generate_verdict
 
@@ -102,3 +102,25 @@ def test_generate_verdict_summary():
     assert verdict["overall_abi_change_pct"] == -40.0
     assert verdict["cropland_loss_ha"] == 4.5
     assert "Encroachment Alert Active" in verdict["summary"]
+
+
+def test_abi_all_natural_no_buildings():
+    """ABI should be float('inf') when there are zero building pixels."""
+    mask = np.array([[2, 2, 3], [4, 5, 0]], dtype=np.uint8)  # no class 1 pixels
+    res = compute_abi(mask)
+    assert res["abi"] == float("inf")
+    assert res["buildings_pixels"] == 0
+
+
+def test_abi_inf_safe_float_in_backend():
+    """
+    safe_float() in app.py must convert float('inf') to a default value
+    so JSON serialisation never breaks.
+    """
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from app import safe_float
+    assert safe_float(float("inf"), default=0.0) == 0.0
+    assert safe_float(float("-inf"), default=0.0) == 0.0
+    assert safe_float(float("nan"), default=-1.0) == -1.0
+    assert safe_float(3.14) == 3.14
