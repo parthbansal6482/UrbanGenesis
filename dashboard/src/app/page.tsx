@@ -92,7 +92,7 @@ interface AnalysisResponse {
 // ============================================================
 // CONSTANTS
 // ============================================================
-const API_ORIGIN = "http://localhost:8000";
+const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // ---- Real data from precomputed verdict.json files ----
 // These are the actual Sentinel-2 derived values. Used when API is offline.
@@ -526,7 +526,7 @@ export default function Home() {
     setLoadingAnalysis(true);
     fetch(`${API_ORIGIN}/api/analyse?zone=${selectedZoneKey}&before=${beforeYear}&after=${afterYear}`)
       .then(r => { if (!r.ok) throw new Error("offline"); return r.json(); })
-      .then(d => setAnalysis(d))
+      .then(d => { setAnalysis(d); setApiWarning(null); })
       .catch(() => {
         // API offline: use real precomputed verdict data embedded above.
         // Adjust the comparison slice for the selected year range.
@@ -536,6 +536,16 @@ export default function Home() {
         const ts = base.timeseries;
         const rb = ts.find(r => r.year === beforeYear) ?? ts[0];
         const ra = ts.find(r => r.year === afterYear)  ?? ts[ts.length - 1];
+
+        // Check if selected years are outside precomputed range
+        const maxPrecomputed = Math.max(...ts.map(r => r.year));
+        const minPrecomputed = Math.min(...ts.map(r => r.year));
+        let warningText = "API offline — showing precomputed fallback data";
+        if (beforeYear < minPrecomputed || afterYear > maxPrecomputed) {
+          warningText += ` (Warning: precomputed data only covers ${minPrecomputed}–${maxPrecomputed}. Selected years outside range fall back to nearest available year)`;
+        }
+        setApiWarning(warningText);
+
         const abiChangePct = rb.abi > 0
           ? +((( ra.abi - rb.abi) / rb.abi) * 100).toFixed(1)
           : 0;
@@ -623,6 +633,7 @@ export default function Home() {
     if (z) { setBeforeYear(z.years[0]); setAfterYear(z.years[z.years.length - 1]); }
     setActiveTab("comparison");
     setVizMode("AI Land Use Classification");
+    setSliderValue(50);
   };
 
   const currentZone = zones.find(z => z.key === selectedZoneKey) || null;
@@ -1041,7 +1052,7 @@ export default function Home() {
                   style={{ padding: "12px 14px", cursor: "pointer" }}
                 >
                   <span className="section-label" style={{ display: "block", marginBottom: 8 }}>
-                    Farmland & Water Loss vs. Urban Expansion
+                    Farmland & Water vs. Built-up Timeline
                   </span>
                   <EncroachmentChart data={analysis.timeseries} />
                 </motion.div>
@@ -1142,7 +1153,7 @@ export default function Home() {
                 {/* Header */}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span className="section-label" style={{ fontSize: 13, letterSpacing: "0.06em", color: "var(--text-primary)" }}>
-                    {expandedChart === "line" ? "ABI Ratio Trend Timeline" : "Farmland & Water Loss vs. Urban Expansion"}
+                    {expandedChart === "line" ? "ABI Ratio Trend Timeline" : "Farmland & Water vs. Built-up Timeline"}
                   </span>
                   <button
                     onClick={() => setExpandedChart(null)}

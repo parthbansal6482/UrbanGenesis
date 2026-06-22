@@ -9,16 +9,15 @@ Designed for Satyukt Analytics use cases:
   - MRV Carbon Credit: multi-year ABI timeseries = verifiable vegetation baseline
   - Crop Insurance: ABI grade → risk tier for premium recalculation
 
-Class map (must match model/dataset.py):
+Class map (must match app.py):
   0 = background
   1 = buildings
-  2 = roads
-  3 = cropland          ← KEY ADDITION vs previous version
-  4 = dense_vegetation
-  5 = water
-  6 = bare_soil
+  2 = cropland
+  3 = dense_vegetation
+  4 = water_bodies
+  5 = bare_soil
 
-ABI = (cropland + dense_vegetation + water) / (buildings + roads)
+ABI = (cropland + dense_vegetation + water_bodies) / buildings
 
 Interpretation:
   ABI > 2.0  → Healthy buffer. Farmland well-protected.
@@ -34,7 +33,7 @@ from PIL import Image
 from typing import Dict, List
 
 # Classes that form the agricultural/natural buffer
-BUFFER_CLASSES = {2, 3, 4}       # cropland, dense_vegetation, water
+BUFFER_CLASSES = {2, 3, 4}       # cropland, dense_vegetation, water_bodies
 ENCROACH_CLASSES = {1}           # buildings (encroachment)
 CROPLAND_CLASS = 2
 
@@ -48,8 +47,8 @@ def compute_abi(mask: np.ndarray) -> Dict:
 
     Returns:
         dict with keys: abi, cropland_pixels, vegetation_pixels, water_pixels,
-        buildings_pixels, buffer_pixels, encroach_pixels,
-        cropland_pct, encroach_pct
+        buildings_pixels, soil_pixels, buffer_pixels, encroach_pixels,
+        cropland_pct, vegetation_pct, water_pct, buildings_pct, soil_pct, encroach_pct
     """
     total = mask.size
 
@@ -57,11 +56,12 @@ def compute_abi(mask: np.ndarray) -> Dict:
     vegetation_px = int((mask == 3).sum())
     water_px = int((mask == 4).sum())
     buildings_px = int((mask == 1).sum())
+    soil_px = int((mask == 5).sum())
 
     buffer_px = cropland_px + vegetation_px + water_px
     encroach_px = buildings_px
 
-    abi = float(buffer_px) / encroach_px if encroach_px > 0 else float("inf")
+    abi = float(buffer_px) / encroach_px if encroach_px > 0 else 99.99
 
     return {
         "abi": round(abi, 4),
@@ -69,9 +69,14 @@ def compute_abi(mask: np.ndarray) -> Dict:
         "vegetation_pixels": vegetation_px,
         "water_pixels": water_px,
         "buildings_pixels": buildings_px,
+        "soil_pixels": soil_px,
         "buffer_pixels": buffer_px,
         "encroach_pixels": encroach_px,
         "cropland_pct": round(cropland_px / total * 100, 2),
+        "vegetation_pct": round(vegetation_px / total * 100, 2),
+        "water_pct": round(water_px / total * 100, 2),
+        "buildings_pct": round(buildings_px / total * 100, 2),
+        "soil_pct": round(soil_px / total * 100, 2),
         "encroach_pct": round(encroach_px / total * 100, 2),
     }
 

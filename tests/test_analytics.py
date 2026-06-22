@@ -105,22 +105,22 @@ def test_generate_verdict_summary():
 
 
 def test_abi_all_natural_no_buildings():
-    """ABI should be float('inf') when there are zero building pixels."""
+    """ABI should be 99.99 when there are zero building pixels to prevent JSON serialization errors."""
     mask = np.array([[2, 2, 3], [4, 5, 0]], dtype=np.uint8)  # no class 1 pixels
     res = compute_abi(mask)
-    assert res["abi"] == float("inf")
+    assert res["abi"] == 99.99
     assert res["buildings_pixels"] == 0
 
 
 def test_abi_inf_safe_float_in_backend():
     """
-    safe_float() in app.py must convert float('inf') to a default value
+    safe_float() in app.py must convert positive float('inf') to 99.99
     so JSON serialisation never breaks.
     """
     import sys, os
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from app import safe_float
-    assert safe_float(float("inf"), default=0.0) == 0.0
+    assert safe_float(float("inf"), default=0.0) == 99.99
     assert safe_float(float("-inf"), default=0.0) == 0.0
     assert safe_float(float("nan"), default=-1.0) == -1.0
     assert safe_float(3.14) == 3.14

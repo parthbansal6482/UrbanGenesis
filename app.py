@@ -4,6 +4,7 @@ import math
 import logging
 import functools
 import yaml
+import numpy as np
 from pathlib import Path
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Query
@@ -65,6 +66,24 @@ CLASS_INFO = {
     5: {"name": "Bare Soil", "color": "#D2B48C", "emoji": "🏜️"},
 }
 
+# Precompute RGB values for color mapping to optimize mask conversion
+CLASS_RGB = {}
+for cls_id, info in CLASS_INFO.items():
+    hex_str = info["color"].lstrip('#')
+    CLASS_RGB[cls_id] = np.array(
+        [int(hex_str[i:i+2], 16) for i in (0, 2, 4)],
+        dtype=np.uint8
+    )
+
+def rgb_to_mask(rgb_img: np.ndarray) -> np.ndarray:
+    """Convert an RGB segmentation visualization back into a class ID mask."""
+    h, w = rgb_img.shape[:2]
+    mask = np.zeros((h, w), dtype=np.uint8)
+    for cls_id, rgb_color in CLASS_RGB.items():
+        match = np.all(rgb_img == rgb_color, axis=-1)
+        mask[match] = cls_id
+    return mask
+
 app = FastAPI(
     title="UrbanGenesis API",
     description="Backend API for Satyukt Farmland Encroachment Detection System",
@@ -83,9 +102,15 @@ async def add_cache_control(request: Request, call_next):
     return response
 
 # CORS setup
+cors_origins_env = os.getenv("CORS_ORIGINS")
+if cors_origins_env:
+    allow_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+else:
+    allow_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -101,21 +126,29 @@ else:
 def safe_float(v, default=0.0):
     try:
         f = float(v)
-        if math.isnan(f) or math.isinf(f):
+        if math.isnan(f):
             return default
+        if math.isinf(f):
+            return 99.99 if f > 0 else default
         return f
     except (TypeError, ValueError):
         return default
 
 @functools.lru_cache(maxsize=16)
 def load_zone_verdict(zone_key: str) -> Optional[dict]:
+    # Prevent directory traversal and check configuration whitelist
+    if zone_key not in ZONES_CONFIG:
+        logger.warning(f"Unauthorized or invalid zone_key: {zone_key}")
+        return None
+
     verdict_path = PRECOMPUTED_DIR / zone_key / "verdict.json"
     if not verdict_path.exists():
         return None
     try:
         with open(verdict_path, "r") as f:
             raw = f.read()
-        raw = raw.replace(": Infinity", ": null").replace(":Infinity", ":null")
+        # Cap Infinity values directly in raw json to 99.99
+        raw = raw.replace(": Infinity", ": 99.99").replace(":Infinity", ":99.99")
         raw = raw.replace(": NaN", ": null").replace(":NaN", ":null")
         data = json.loads(raw)
         
@@ -337,21 +370,10 @@ def analyse_zone(
     if before_mask_path.exists() and after_mask_path.exists():
         try:
             from PIL import Image
-            import numpy as np
             from analytics.encroachment import calculate_encroachment_stats, generate_encroachment_heatmap
 
             before_img = np.array(Image.open(before_mask_path).convert("RGB"))
             after_img = np.array(Image.open(after_mask_path).convert("RGB"))
-
-            def rgb_to_mask(rgb_img):
-                h, w = rgb_img.shape[:2]
-                mask = np.zeros((h, w), dtype=np.uint8)
-                for cls_id, info in CLASS_INFO.items():
-                    hex_str = info["color"].lstrip('#')
-                    color = tuple(int(hex_str[i:i+2], 16) for i in (0, 2, 4))
-                    match = np.all(rgb_img == color, axis=-1)
-                    mask[match] = cls_id
-                return mask
 
             mask_before = rgb_to_mask(before_img)
             mask_after = rgb_to_mask(after_img)
@@ -360,11 +382,12 @@ def analyse_zone(
             mapping_type = "esri"
             encroachment_stats = calculate_encroachment_stats(mask_before, mask_after, mapping_type=mapping_type)
 
-            # Generate and save dynamic heatmap
-            heatmap_arr = generate_encroachment_heatmap(mask_before, mask_after, mapping_type=mapping_type)
+            # Generate and save dynamic heatmap if not already cached
             heatmap_filename = f"encroachment_heatmap_{before_yr}_{after_yr}.png"
             heatmap_path = PRECOMPUTED_DIR / zone / heatmap_filename
-            Image.fromarray(heatmap_arr).save(heatmap_path)
+            if not heatmap_path.exists():
+                heatmap_arr = generate_encroachment_heatmap(mask_before, mask_after, mapping_type=mapping_type)
+                Image.fromarray(heatmap_arr).save(heatmap_path)
 
             encroachment_heatmap_url = f"/static/{zone}/{heatmap_filename}"
         except Exception as e:
