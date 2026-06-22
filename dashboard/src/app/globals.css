@@ -472,7 +472,6 @@ input[type="range"]::-moz-range-thumb {
   animation: shimmer 1.6s ease-in-out infinite;
   border-radius: 6px;
 }
-}
 
 /* ============================================================
    DATA LINE CHART STYLES
