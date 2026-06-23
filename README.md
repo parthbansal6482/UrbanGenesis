@@ -20,27 +20,44 @@ Satyukt-aligned Farmland Encroachment Detection System. Rebuilt from UrbanGenesi
 ## 📂 Project Directory Structure
 ```
 FarmGuard/
-├── config/
-│   └── settings.yaml          # Farmland zones, LULC colors, and grading thresholds
-├── docs/                      # Architectural and specification documentation
-│   ├── architecture.md        # Architecture topology and data flows
-│   ├── platform_specification.md # Sat4Risk / MRV / LULC classes specification
-│   └── developer_guide.md     # API reference and developer configuration guide
-├── analytics/                 # Core analytical code
+├── core/                      # Shared constants and utilities (no internal deps)
+│   ├── class_map.py           # CLASS_INFO, CLASS_RGB, CLASS_COLORS, ESRI_TO_FARMGUARD
+│   ├── config.py              # load_config(), PRECOMPUTED_DIR, safe_float()
+│   └── image_utils.py         # rgb_to_mask(), mask_to_rgb()
+├── api/                       # FastAPI HTTP layer
+│   ├── main.py                # create_app() — CORS, middleware, static mount, routers
+│   ├── dependencies.py        # load_zone_verdict() (LRU-cached), get_zones_config()
+│   └── routes/
+│       ├── zones.py           # GET /api/zones
+│       └── analyse.py         # GET /api/analyse
+├── pipeline/                  # ETL / data acquisition layer
+│   ├── stac_client.py         # authenticated STAC client factory
+│   ├── landcover_fetcher.py   # fetch_esri_landcover_tile()
+│   ├── sentinel_fetcher.py    # fetch_sentinel2_true_color()
+│   ├── ndvi.py                # generate_ndvi_map_from_bands()
+│   ├── mock_generator.py      # generate_realistic_mock(), mask_to_true_color()
+│   └── zone_pipeline.py       # generate_zone_assets() — full orchestrator
+├── analytics/                 # Pure computation — no file I/O
 │   ├── __init__.py
-│   ├── abi.py                 # ABI calculations, missing metrics, and infinity capping
+│   ├── abi.py                 # ABI calculations and buffer indices
 │   ├── change_detection.py    # Transition matrix calculation engine
+│   ├── encroachment.py        # calculate_encroachment_stats(), generate_encroachment_heatmap()
 │   └── grader.py              # Satyukt risk grader and alert metrics
-├── dashboard/                 # Next.js 16 Dashboard client
-├── demo/
-│   └── precomputed/           # Precomputed native-res regional files for offline dashboard
-├── scripts/
-│   └── fetch_esri_landcover.py # Planetary Computer ETL pipeline
 ├── tests/
 │   ├── test_analytics.py      # Python tests for analytical functions and math
 │   ├── test_api.py            # API client routing integration tests
 │   └── test_encroachment.py   # Pixel-level encroachment verification tests
-├── app.py                     # FastAPI backend server
+├── config/
+│   └── settings.yaml          # Farmland zones, LULC colors, and grading thresholds
+├── dashboard/                 # Next.js 16 Dashboard client
+├── demo/
+│   └── precomputed/           # Precomputed native-res regional files for offline dashboard
+├── docs/                      # Architectural and specification documentation
+│   ├── architecture.md        # Architecture topology and data flows
+│   ├── platform_specification.md # Sat4Risk / MRV / LULC classes specification
+│   └── developer_guide.md     # API reference and developer configuration guide
+├── app.py                     # Thin shim FastAPI backend server
+├── run_pipeline.py            # CLI entrypoint for the ETL pipeline
 ├── requirements.txt           # Python backend dependencies
 └── README.md                  # This file
 ```
@@ -63,10 +80,18 @@ CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 ```
 
 ### 3. Run Ingestion Pipeline (ETL)
-Generate the precomputed native-resolution assets for registered agricultural zones:
+Generate the precomputed native-resolution assets for registered agricultural zones.
+
+**Using live satellite data (requires network):**
 ```bash
-python scripts/fetch_esri_landcover.py --zone all
+python run_pipeline.py
 ```
+
+**Using local synthetic mock data (no network needed):**
+```bash
+python run_pipeline.py --mock
+```
+
 *Whitelisted zones include: `nashik_north`, `vijayawada_west`, `hubli_outskirts`, `bengaluru`*
 
 ### 4. Start Backend Service

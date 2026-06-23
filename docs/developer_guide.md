@@ -116,7 +116,11 @@ Configure these settings inside the root `.env` file:
 ### Data Ingestion (ETL)
 Generate the precomputed native-resolution assets for registered agricultural zones:
 ```bash
-python scripts/fetch_esri_landcover.py --zone all
+# Using live satellite data
+python run_pipeline.py
+
+# Using offline synthetic mock data
+python run_pipeline.py --mock
 ```
 
 ### Run Backend Server (FastAPI)

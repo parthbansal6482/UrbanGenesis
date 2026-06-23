@@ -112,15 +112,15 @@ def test_abi_all_natural_no_buildings():
     assert res["buildings_pixels"] == 0
 
 
-def test_abi_inf_safe_float_in_backend():
+def test_safe_float_in_core_config():
     """
-    safe_float() in app.py must convert positive float('inf') to 99.99
-    so JSON serialisation never breaks.
+    safe_float() lives in core/config after the refactor.
+    Verifies NaN, ±Inf, and valid floats are handled correctly.
     """
-    import sys, os
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from app import safe_float
+    from core.config import safe_float
+
     assert safe_float(float("inf"), default=0.0) == 99.99
     assert safe_float(float("-inf"), default=0.0) == 0.0
     assert safe_float(float("nan"), default=-1.0) == -1.0
     assert safe_float(3.14) == 3.14
+    assert safe_float(None, default=5.0) == 5.0
