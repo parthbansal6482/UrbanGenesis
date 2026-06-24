@@ -232,11 +232,13 @@ export default function SliderComparison({
             <img
               src={beforeSrc}
               alt={`Before ${beforeYear}`}
+              draggable={false}
               style={{
                 width: "100%", height: "100%",
                 objectFit: "contain",
                 opacity,
                 display: "block",
+                userSelect: "none",
               }}
             />
             {/* Before year label */}
@@ -262,11 +264,13 @@ export default function SliderComparison({
             <img
               src={afterSrc}
               alt={`After ${afterYear}`}
+              draggable={false}
               style={{
                 width: "100%", height: "100%",
                 objectFit: "contain",
                 opacity,
                 display: "block",
+                userSelect: "none",
               }}
             />
             {/* After year label */}
