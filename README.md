@@ -122,3 +122,28 @@ For further details, refer to the documents in the `docs/` folder:
 - See [docs/architecture.md](file:///Users/parthbansal/Projects/UrbanGenesis/docs/architecture.md) for data flows, sequencing, and component interactions.
 - See [docs/platform_specification.md](file:///Users/parthbansal/Projects/UrbanGenesis/docs/platform_specification.md) for Satyukt Sat4Risk/MRV business cases and math index derivations.
 - See [docs/developer_guide.md](file:///Users/parthbansal/Projects/UrbanGenesis/docs/developer_guide.md) for environment configuration matrices and REST endpoints.
+
+---
+
+## Custom Region Support — Known Limitations
+
+FarmGuard supports analysis of any user-specified bounding box, subject to:
+- **Maximum area**: ~50km x 50km per request (prevents accidental city-or-state-scale requests that would be too slow/expensive to process)
+- **Data availability**: regions with no recent cloud-free Sentinel-2 coverage, or outside ESRI LULC's coverage area, will return a clear error rather than a result
+
+**Forecasting model generalization**: The U-Net forecasting model was trained on land-use transition patterns from 4 zones in Maharashtra, Karnataka, and Andhra Pradesh. Forecasts for regions with similar agro-climatic and urban-growth patterns (e.g. nearby Deccan plateau agricultural belts) are expected to be reasonably reliable. Forecasts for regions with substantially different field geometry, crop patterns, or urbanization styles (e.g. Indo-Gangetic plain, hill agriculture, or non-Indian regions) have not been validated and should be treated as exploratory, not authoritative, until backtested (see below).
+
+---
+
+## Forecast Model — Validated Accuracy (Backtested)
+
+The U-Net forecasting model was backtested by training on data through 2021 and forecasting forward to 2023 — a year for which real ESRI LULC ground truth already exists — across all 4 monitored zones.
+
+| Zone | Pixel Accuracy | ABI Prediction Error |
+|------|----------------|----------------------|
+| Nashik North | 93.1% | 13.6% |
+| Hubli Outskirts | 90.1% | 6.4% |
+| Vijayawada West | 88.9% | 2.6% |
+| Bengaluru | 91.1% | 10.9% |
+
+These results reflect a 2-year forecast horizon. Accuracy over the full 25-year projection horizon (2025–2051) has not been independently validated, since no ground truth exists for those years. Forecasts beyond ~2-3 years should be treated as directional trend indicators rather than precise predictions.

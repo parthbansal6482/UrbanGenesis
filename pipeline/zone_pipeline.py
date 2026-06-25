@@ -97,6 +97,7 @@ def generate_zone_assets(
     bbox: list[float],
     years: list[int],
     use_network: bool = True,
+    output_dir: Path = None,
 ) -> dict:
     """
     Generate and persist all precomputed assets for a geographic zone.
@@ -115,11 +116,12 @@ def generate_zone_assets(
         bbox:        [lon_min, lat_min, lon_max, lat_max] in WGS84.
         years:       Ordered list of years to process.
         use_network: If False, skip STAC API calls and use mock data only.
+        output_dir:  Optional custom directory where output assets will be saved.
 
     Returns:
         The assembled verdict dict (also written to verdict.json).
     """
-    zone_dir = PRECOMPUTED_DIR / zone_key
+    zone_dir = output_dir if output_dir is not None else (PRECOMPUTED_DIR / zone_key)
     zone_dir.mkdir(parents=True, exist_ok=True)
 
     timeseries_stats: list[dict] = []

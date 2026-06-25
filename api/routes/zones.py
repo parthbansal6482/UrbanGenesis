@@ -21,7 +21,7 @@ router = APIRouter()
 
 
 @router.get("/api/zones")
-def get_zones() -> JSONResponse:
+def get_zones(format: str = "list") -> JSONResponse:
     """
     List all configured agricultural zones with summary metrics.
 
@@ -73,6 +73,19 @@ def get_zones() -> JSONResponse:
             "cropland_loss_ha": cropland_loss_ha,
             "encroachment_alert": encroachment_alert,
         })
+
+    if format == "object":
+        return JSONResponse(
+            content={
+                "zones": zones_list,
+                "custom_region_supported": True,
+                "custom_region_constraints": {
+                    "max_area_deg2": 0.25,
+                    "min_area_deg2": 0.0001,
+                }
+            },
+            headers={"Cache-Control": "public, max-age=300"},
+        )
 
     return JSONResponse(
         content=zones_list,

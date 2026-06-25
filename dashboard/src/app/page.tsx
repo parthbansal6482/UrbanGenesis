@@ -501,6 +501,12 @@ export default function Home() {
   const [selectedZoneKey, setSelectedZoneKey] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"map" | "comparison">("map");
 
+  const [inputMode, setInputMode] = useState<"named" | "draw" | "coords">("named");
+  const [customBbox, setCustomBbox] = useState<[number, number, number, number] | null>(null);
+  const [coordsInput, setCoordsInput] = useState({ minLon: "", minLat: "", maxLon: "", maxLat: "" });
+  const [coordsError, setCoordsError] = useState<string | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+
   const [beforeYear, setBeforeYear] = useState<number>(2017);
   const [afterYear, setAfterYear] = useState<number>(2025);
   const [vizMode, setVizMode] = useState<string>("AI Land Use Classification");
@@ -510,6 +516,82 @@ export default function Home() {
   const [loadingAnalysis, setLoadingAnalysis] = useState<boolean>(false);
   const [apiWarning, setApiWarning] = useState<string | null>(null);
   const [expandedChart, setExpandedChart] = useState<"line" | "encroachment" | null>(null);
+
+  const currentZone = zones.find(z => z.key === selectedZoneKey) || null;
+
+  const availableYears = useMemo(() => {
+    if (inputMode === "named" && currentZone) {
+      return currentZone.years;
+    }
+    if (analysis && analysis.zone_info && analysis.zone_info.years) {
+      return analysis.zone_info.years;
+    }
+    return [2019, 2023];
+  }, [inputMode, currentZone, analysis]);
+
+  const validateFrontendBbox = (minLon: number, minLat: number, maxLon: number, maxLat: number): string | null => {
+    if (isNaN(minLon) || isNaN(minLat) || isNaN(maxLon) || isNaN(maxLat)) {
+      return "All coordinates must be valid numbers.";
+    }
+    if (minLon < -180 || minLon > 180 || maxLon < -180 || maxLon > 180) {
+      return "Longitude must be between -180 and 180.";
+    }
+    if (minLat < -90 || minLat > 90 || maxLat < -90 || maxLat > 90) {
+      return "Latitude must be between -90 and 90.";
+    }
+    if (minLon >= maxLon) {
+      return "min_lon must be less than max_lon.";
+    }
+    if (minLat >= maxLat) {
+      return "min_lat must be less than max_lat.";
+    }
+    const area = (maxLon - minLon) * (maxLat - minLat);
+    if (area > 0.25) {
+      return `Bbox too large (${area.toFixed(3)} deg²). Max supported is 0.25 deg² (~50km x 50km).`;
+    }
+    if (area < 0.0001) {
+      return `Bbox too small (${area.toFixed(6)} deg²). Min supported is 0.0001 deg².`;
+    }
+    return null;
+  };
+
+  const getBboxCacheKey = (minLon: number, minLat: number, maxLon: number, maxLat: number): string => {
+    const rounded = [minLon, minLat, maxLon, maxLat].map(x => Number(x.toFixed(3)));
+    return `bbox_${rounded[0]}_${rounded[1]}_${rounded[2]}_${rounded[3]}`;
+  };
+
+  const handleCoordChange = (field: string, value: string) => {
+    const nextCoords = { ...coordsInput, [field]: value };
+    setCoordsInput(nextCoords);
+
+    if (nextCoords.minLon && nextCoords.minLat && nextCoords.maxLon && nextCoords.maxLat) {
+      const minLon = parseFloat(nextCoords.minLon);
+      const minLat = parseFloat(nextCoords.minLat);
+      const maxLon = parseFloat(nextCoords.maxLon);
+      const maxLat = parseFloat(nextCoords.maxLat);
+
+      const err = validateFrontendBbox(minLon, minLat, maxLon, maxLat);
+      setCoordsError(err);
+      if (!err) {
+        setCustomBbox([minLon, minLat, maxLon, maxLat]);
+      }
+    } else {
+      setCoordsError(null);
+    }
+  };
+
+  const handleAnalyzeCustomRegion = (minLon: number, minLat: number, maxLon: number, maxLat: number) => {
+    const error = validateFrontendBbox(minLon, minLat, maxLon, maxLat);
+    if (error) {
+      setCoordsError(error);
+      return;
+    }
+    const key = getBboxCacheKey(minLon, minLat, maxLon, maxLat);
+    setSelectedZoneKey(key);
+    setBeforeYear(2019);
+    setAfterYear(2023);
+    setActiveTab("comparison");
+  };
 
   // ---- Fetch zones ----
   useEffect(() => {
@@ -522,16 +604,58 @@ export default function Home() {
   // ---- Fetch analysis ----
   useEffect(() => {
     if (!selectedZoneKey) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Set loading state synchronously when starting the analysis fetch to prevent UI lag/inconsistency
     setLoadingAnalysis(true);
-    fetch(`${API_ORIGIN}/api/analyse?zone=${selectedZoneKey}&before=${beforeYear}&after=${afterYear}`)
-      .then(r => { if (!r.ok) throw new Error("offline"); return r.json(); })
-      .then(d => { setAnalysis(d); setApiWarning(null); })
-      .catch(() => {
+    setAnalysisError(null);
+
+    const isCustom = selectedZoneKey.startsWith("bbox_");
+
+    let promise;
+    if (isCustom) {
+      const parts = selectedZoneKey.split("_");
+      const min_lon = parseFloat(parts[1]);
+      const min_lat = parseFloat(parts[2]);
+      const max_lon = parseFloat(parts[3]);
+      const max_lat = parseFloat(parts[4]);
+
+      promise = fetch(`${API_ORIGIN}/api/analyse_bbox`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          min_lon,
+          min_lat,
+          max_lon,
+          max_lat,
+          years: [beforeYear, afterYear],
+        }),
+      });
+    } else {
+      promise = fetch(`${API_ORIGIN}/api/analyse?zone=${selectedZoneKey}&before=${beforeYear}&after=${afterYear}`);
+    }
+
+    promise
+      .then(r => {
+        if (!r.ok) {
+          return r.json().then(err => {
+            throw new Error(err.detail || "Analysis failed");
+          });
+        }
+        return r.json();
+      })
+      .then(d => {
+        setAnalysis(d);
+        setApiWarning(null);
+      })
+      .catch((err) => {
+        if (isCustom) {
+          setAnalysisError(err.message);
+          setAnalysis(null);
+          return;
+        }
+
         // API offline: use real precomputed verdict data embedded above.
         // Adjust the comparison slice for the selected year range.
         const base = PRECOMPUTED_VERDICTS[selectedZoneKey];
-        if (!base) { setLoadingAnalysis(false); return; }
+        if (!base) { return; }
 
         const ts = base.timeseries;
         const rb = ts.find(r => r.year === beforeYear) ?? ts[0];
@@ -636,7 +760,7 @@ export default function Home() {
     setSliderValue(50);
   };
 
-  const currentZone = zones.find(z => z.key === selectedZoneKey) || null;
+
 
   const getOverlayUrl = (which: "before" | "after") => {
     if (!analysis) return null;
@@ -792,6 +916,20 @@ export default function Home() {
                 zones={zones}
                 selectedZoneKey={selectedZoneKey}
                 onSelectZone={handleSelectZone}
+                inputMode={inputMode}
+                drawnBbox={customBbox}
+                onDrawComplete={(bbox) => {
+                  setCustomBbox(bbox);
+                  if (bbox) {
+                    setCoordsInput({
+                      minLon: bbox[0].toFixed(6),
+                      minLat: bbox[1].toFixed(6),
+                      maxLon: bbox[2].toFixed(6),
+                      maxLat: bbox[3].toFixed(6),
+                    });
+                    setCoordsError(null);
+                  }
+                }}
               />
             ) : (
               <SliderComparison
@@ -821,20 +959,178 @@ export default function Home() {
           }}>
             <p className="section-label" style={{ marginBottom: 14 }}>Analysis Setup</p>
 
-            {/* Zone selector */}
-            <div style={{ marginBottom: 12 }}>
-              <label htmlFor="zone-select" className="section-label"
-                style={{ display: "block", marginBottom: 6, color: "var(--text-secondary)" }}>
-                Target Buffer Zone
-              </label>
-              <select id="zone-select" value={selectedZoneKey || ""}
-                onChange={e => handleSelectZone(e.target.value)}>
-                <option value="" disabled>Select a Region…</option>
-                {zones.map(z => <option key={z.key} value={z.key}>{z.name}</option>)}
-              </select>
+            {/* Mode selection toggle */}
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr",
+              background: "rgba(5,12,20,0.6)",
+              border: "1px solid var(--border-dim)",
+              borderRadius: 8,
+              padding: 3,
+              gap: 4,
+              marginBottom: 14,
+            }}>
+              <button
+                className={`tab-btn ${inputMode === "named" ? "active" : ""}`}
+                style={{ fontSize: 10, padding: "6px 2px", textAlign: "center" }}
+                onClick={() => setInputMode("named")}
+              >
+                Named Zone
+              </button>
+              <button
+                className={`tab-btn ${inputMode === "draw" ? "active" : ""}`}
+                style={{ fontSize: 10, padding: "6px 2px", textAlign: "center" }}
+                onClick={() => setInputMode("draw")}
+              >
+                Draw on Map
+              </button>
+              <button
+                className={`tab-btn ${inputMode === "coords" ? "active" : ""}`}
+                style={{ fontSize: 10, padding: "6px 2px", textAlign: "center" }}
+                onClick={() => setInputMode("coords")}
+              >
+                Coordinates
+              </button>
             </div>
 
-            {currentZone && (<>
+            {/* Zone selector */}
+            {inputMode === "named" && (
+              <div style={{ marginBottom: 12 }}>
+                <label htmlFor="zone-select" className="section-label"
+                  style={{ display: "block", marginBottom: 6, color: "var(--text-secondary)" }}>
+                  Target Buffer Zone
+                </label>
+                <select id="zone-select" value={selectedZoneKey || ""}
+                  onChange={e => handleSelectZone(e.target.value)}>
+                  <option value="" disabled>Select a Region…</option>
+                  {zones.map(z => <option key={z.key} value={z.key}>{z.name}</option>)}
+                </select>
+              </div>
+            )}
+
+            {inputMode === "draw" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 12 }}>
+                {!customBbox ? (
+                  <div className="glass-card" style={{ padding: "10px 12px", border: "1px dashed var(--border-dim)", borderRadius: 8 }}>
+                    <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: 0 }}>
+                      📍 Switch to the <strong>Region Map</strong> tab and drag a rectangle on the map to draw your region.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="glass-card" style={{ padding: "10px 12px", borderRadius: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+                    <p style={{ fontSize: 11, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+                      ✅ Region Captured:
+                    </p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 9, fontFamily: "monospace", color: "var(--text-secondary)" }}>
+                      <div>Min Lon: {customBbox[0].toFixed(4)}</div>
+                      <div>Min Lat: {customBbox[1].toFixed(4)}</div>
+                      <div>Max Lon: {customBbox[2].toFixed(4)}</div>
+                      <div>Max Lat: {customBbox[3].toFixed(4)}</div>
+                    </div>
+                    {coordsError && (
+                      <p style={{ color: "var(--red-400)", fontSize: 10, margin: 0, fontFamily: "monospace" }}>
+                        ⚠️ {coordsError}
+                      </p>
+                    )}
+                    <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                      <button
+                        className="tab-btn active"
+                        style={{ flex: 1, padding: "6px", borderRadius: 6, fontSize: 10, fontWeight: 700 }}
+                        disabled={!!coordsError}
+                        onClick={() => handleAnalyzeCustomRegion(customBbox[0], customBbox[1], customBbox[2], customBbox[3])}
+                      >
+                        Analyze Bbox
+                      </button>
+                      <button
+                        className="tab-btn"
+                        style={{ padding: "6px 10px", borderRadius: 6, fontSize: 10, borderColor: "var(--red-400)", color: "var(--red-400)" }}
+                        onClick={() => {
+                          setCustomBbox(null);
+                          setCoordsInput({ minLon: "", minLat: "", maxLon: "", maxLat: "" });
+                          setCoordsError(null);
+                        }}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {inputMode === "coords" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div>
+                    <label className="section-label" style={{ display: "block", marginBottom: 4, color: "var(--text-secondary)" }}>Min Longitude</label>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="e.g. 73.75"
+                      value={coordsInput.minLon}
+                      onChange={e => handleCoordChange("minLon", e.target.value)}
+                      style={{ width: "100%", padding: "6px 10px", background: "rgba(5,12,20,0.5)", border: "1px solid var(--border-dim)", borderRadius: 6, color: "var(--text-primary)", fontSize: 12 }}
+                    />
+                  </div>
+                  <div>
+                    <label className="section-label" style={{ display: "block", marginBottom: 4, color: "var(--text-secondary)" }}>Min Latitude</label>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="e.g. 20.08"
+                      value={coordsInput.minLat}
+                      onChange={e => handleCoordChange("minLat", e.target.value)}
+                      style={{ width: "100%", padding: "6px 10px", background: "rgba(5,12,20,0.5)", border: "1px solid var(--border-dim)", borderRadius: 6, color: "var(--text-primary)", fontSize: 12 }}
+                    />
+                  </div>
+                  <div>
+                    <label className="section-label" style={{ display: "block", marginBottom: 4, color: "var(--text-secondary)" }}>Max Longitude</label>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="e.g. 73.85"
+                      value={coordsInput.maxLon}
+                      onChange={e => handleCoordChange("maxLon", e.target.value)}
+                      style={{ width: "100%", padding: "6px 10px", background: "rgba(5,12,20,0.5)", border: "1px solid var(--border-dim)", borderRadius: 6, color: "var(--text-primary)", fontSize: 12 }}
+                    />
+                  </div>
+                  <div>
+                    <label className="section-label" style={{ display: "block", marginBottom: 4, color: "var(--text-secondary)" }}>Max Latitude</label>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="e.g. 20.15"
+                      value={coordsInput.maxLat}
+                      onChange={e => handleCoordChange("maxLat", e.target.value)}
+                      style={{ width: "100%", padding: "6px 10px", background: "rgba(5,12,20,0.5)", border: "1px solid var(--border-dim)", borderRadius: 6, color: "var(--text-primary)", fontSize: 12 }}
+                    />
+                  </div>
+                </div>
+
+                {coordsError && (
+                  <p style={{ color: "var(--red-400)", fontSize: 10, margin: 0, fontFamily: "monospace" }}>
+                    ⚠️ {coordsError}
+                  </p>
+                )}
+
+                <button
+                  className="tab-btn active"
+                  style={{ width: "100%", padding: "8px", borderRadius: 6, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}
+                  disabled={!!coordsError || !coordsInput.minLon || !coordsInput.minLat || !coordsInput.maxLon || !coordsInput.maxLat}
+                  onClick={() => {
+                    const minLon = parseFloat(coordsInput.minLon);
+                    const minLat = parseFloat(coordsInput.minLat);
+                    const maxLon = parseFloat(coordsInput.maxLon);
+                    const maxLat = parseFloat(coordsInput.maxLat);
+                    handleAnalyzeCustomRegion(minLon, minLat, maxLon, maxLat);
+                  }}
+                >
+                  Analyze Coordinates
+                </button>
+              </div>
+            )}
+
+            {(currentZone || (selectedZoneKey && selectedZoneKey.startsWith("bbox_"))) && (<>
               {/* Year selectors */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
                 <div>
@@ -843,7 +1139,7 @@ export default function Home() {
                     Baseline Year
                   </label>
                   <select id="before-yr" value={beforeYear} onChange={e => setBeforeYear(Number(e.target.value))}>
-                    {currentZone.years.map(yr => <option key={yr} value={yr} disabled={yr >= afterYear}>{yr}</option>)}
+                    {availableYears.map(yr => <option key={yr} value={yr} disabled={yr >= afterYear}>{yr}</option>)}
                   </select>
                 </div>
                 <div>
@@ -852,7 +1148,7 @@ export default function Home() {
                     Audited Year
                   </label>
                   <select id="after-yr" value={afterYear} onChange={e => setAfterYear(Number(e.target.value))}>
-                    {currentZone.years.map(yr => <option key={yr} value={yr} disabled={yr <= beforeYear}>{yr}</option>)}
+                    {availableYears.map(yr => <option key={yr} value={yr} disabled={yr <= beforeYear}>{yr}</option>)}
                   </select>
                 </div>
               </div>
@@ -870,14 +1166,37 @@ export default function Home() {
                   <option value="Infrastructure Encroachment Heatmap">Infrastructure Encroachment Heatmap</option>
                 </select>
               </div>
-
-
             </>)}
           </div>
 
           {/* Metrics panel */}
           <div style={{ flex: 1, overflowY: "auto", padding: "18px 18px" }}>
-            {!selectedZoneKey ? (
+            {analysisError ? (
+              <div style={{
+                display: "flex", flexDirection: "column",
+                alignItems: "center", justifyContent: "center",
+                height: "100%", gap: 12, textAlign: "center",
+                padding: 16,
+              }}>
+                <div style={{
+                  width: 48, height: 48, borderRadius: 12,
+                  background: "rgba(220,38,38,0.1)", border: "1px solid rgba(220,38,38,0.25)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="1.5">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                </div>
+                <p className="section-label" style={{ color: "var(--red-400)", fontWeight: 700, margin: 0 }}>
+                  Analysis Failed
+                </p>
+                <p style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.6, margin: 0 }}>
+                  {analysisError}
+                </p>
+              </div>
+            ) : !selectedZoneKey ? (
               <div style={{
                 display: "flex", flexDirection: "column",
                 alignItems: "center", justifyContent: "center",

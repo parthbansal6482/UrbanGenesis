@@ -21,6 +21,11 @@ from typing import Optional
 
 import numpy as np
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+
+from core.bbox_utils import InvalidBBoxError, bbox_cache_key
+from pipeline.custom_region_pipeline import CUSTOM_REGION_CACHE_DIR, get_cached_or_analyse
 
 from analytics.grader import assign_grade
 from api.dependencies import get_zones_config, load_zone_verdict
@@ -263,3 +268,103 @@ def analyse_zone(
             "encroachment_heatmap": encroachment_heatmap_url,
         },
     }
+
+
+class BBoxAnalyseRequest(BaseModel):
+    min_lon: float
+    min_lat: float
+    max_lon: float
+    max_lat: float
+    years: list[int] | None = None
+
+
+@router.post("/api/analyse_bbox")
+def analyse_bbox(request: BBoxAnalyseRequest):
+    bbox = (request.min_lon, request.min_lat, request.max_lon, request.max_lat)
+    try:
+        verdict = get_cached_or_analyse(bbox, years=request.years)
+        cache_key = bbox_cache_key(bbox)
+
+        # Build the exact same output structure as analyse_zone
+        timeseries = verdict.get("timeseries", [])
+        available_years = sorted(r["year"] for r in timeseries)
+
+        if not available_years:
+            raise HTTPException(status_code=500, detail="No timeseries data found.")
+
+        before_yr = request.years[0] if request.years else available_years[0]
+        after_yr = request.years[-1] if request.years else available_years[-1]
+
+        rec_before = next((r for r in timeseries if r["year"] == before_yr), None)
+        rec_after = next((r for r in timeseries if r["year"] == after_yr), None)
+
+        before_abi = rec_before.get("abi", 0.0) if rec_before else 0.0
+        after_abi = rec_after.get("abi", 0.0) if rec_after else 0.0
+        abi_change_pct = round(((after_abi - before_abi) / before_abi) * 100.0, 1) if before_abi > 0 else 0.0
+
+        grade_info = assign_grade(after_abi)
+
+        if rec_before and rec_after:
+            dynamic_crop_loss_ha = round(
+                (rec_before.get("cropland_pixels", 0) - rec_after.get("cropland_pixels", 0)) * 0.01, 2
+            )
+        else:
+            dynamic_crop_loss_ha = verdict.get("cropland_loss_ha", 0.0)
+
+        encroachment_stats = verdict.get("encroachment", {"total_cropland_lost_ha": 0.0, "total_water_lost_ha": 0.0})
+
+        return {
+            "zone_info": {
+                "key": cache_key,
+                "name": f"Custom Region ({bbox[0]:.3f}, {bbox[1]:.3f})",
+                "bbox": list(bbox),
+                "center": [(bbox[1] + bbox[3]) / 2, (bbox[0] + bbox[2]) / 2],
+                "years": available_years,
+                "satyukt_relevance": "User drawn arbitrary region analysis.",
+            },
+            "metrics": {
+                "latest_abi": after_abi,
+                "overall_abi_change_pct": abi_change_pct,
+                "cropland_loss_ha": dynamic_crop_loss_ha,
+                "grade": grade_info.get("grade", "N/A"),
+                "label": grade_info.get("label", ""),
+                "description": grade_info.get("description", ""),
+                "encroachment_alert": verdict.get("encroachment_alert", False),
+                "encroachment": encroachment_stats,
+            },
+            "comparison": {
+                "before_year": before_yr,
+                "after_year": after_yr,
+                "before_abi": before_abi,
+                "after_abi": after_abi,
+                "abi_change_pct": abi_change_pct,
+            },
+            "transitions": _build_transitions(rec_before, rec_after),
+            "timeseries": timeseries,
+            "overlays": {
+                "before": {
+                    "true_color": f"/static_custom/{cache_key}/true_color_{before_yr}.png",
+                    "ndvi": f"/static_custom/{cache_key}/ndvi_map_{before_yr}.png",
+                    "mask": f"/static_custom/{cache_key}/mask_rgb_{before_yr}.png",
+                },
+                "after": {
+                    "true_color": f"/static_custom/{cache_key}/true_color_{after_yr}.png",
+                    "ndvi": f"/static_custom/{cache_key}/ndvi_map_{after_yr}.png",
+                    "mask": f"/static_custom/{cache_key}/mask_rgb_{after_yr}.png",
+                },
+                "encroachment_heatmap": f"/static_custom/{cache_key}/encroachment_heatmap.png",
+            },
+        }
+    except InvalidBBoxError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Custom analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@router.get("/static_custom/{cache_key}/{filename}")
+def serve_custom_file(cache_key: str, filename: str):
+    file_path = CUSTOM_REGION_CACHE_DIR / cache_key / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(file_path)

@@ -43,18 +43,41 @@ ALLOWED_TRANSITIONS = np.array([
 ], dtype=bool)
 
 
-def forecast_zone(zone_key: str, model: UNet, device: torch.device, batch_size: int, num_workers: int, pin_memory: bool, use_amp: bool) -> None:
-    """Run recursive spatial land-cover forecasting for a single zone up to 2051."""
-    forecast_years = [2025, 2027, 2029, 2031, 2033, 2035, 2037, 2039, 2041, 2043, 2045, 2047, 2049, 2051]
-    zone_dir = PRECOMPUTED_DIR / zone_key
+def forecast_zone(
+    zone_key: str,
+    model: UNet = None,
+    device: torch.device = None,
+    batch_size: int = 8,
+    num_workers: int = 0,
+    pin_memory: bool = False,
+    use_amp: bool = False,
+    start_year: int = 2023,
+    target_year: int = 2051,
+    checkpoint_path: Path = None,
+    zone_dir: Path = None,
+) -> np.ndarray | None:
+    """Run recursive spatial land-cover forecasting for a single zone."""
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Load historical masks
+    if model is None:
+        model = UNet(in_channels=22, out_channels=6).to(device)
+        if checkpoint_path and Path(checkpoint_path).exists():
+            model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+        model.eval()
+
+    forecast_years = list(range(start_year + 2, target_year + 1, 2))
+    if zone_dir is None:
+        zone_dir = PRECOMPUTED_DIR / zone_key
+
+    # Load historical masks up to start_year
     masks = {}
-    for yr in [2017, 2019, 2021, 2023]:
+    historical_years = [y for y in [2017, 2019, 2021, 2023] if y <= start_year]
+    for yr in historical_years:
         img = np.array(Image.open(zone_dir / f"mask_rgb_{yr}.png").convert("RGB"))
         masks[yr] = rgb_to_mask(img)
 
-    h, w = masks[2017].shape
+    h, w = masks[historical_years[0]].shape
 
     for target_yr in forecast_years:
         y_prev = target_yr - 2
@@ -104,11 +127,16 @@ def forecast_zone(zone_key: str, model: UNet, device: torch.device, batch_size: 
 
         masks[target_yr] = full_forecast_mask
 
-        # Save predicted mask
-        forecast_rgb = mask_to_rgb(full_forecast_mask)
-        output_path = zone_dir / f"mask_rgb_{target_yr}.png"
-        Image.fromarray(forecast_rgb).save(output_path)
-        logger.info(f"  Saved U-Net forecasted mask for {target_yr}: {output_path.name}")
+        # For historical backtesting, we do NOT want to overwrite the zone's standard forward-looking forecast files!
+        if target_yr > 2023:
+            # Save predicted mask
+            forecast_rgb = mask_to_rgb(full_forecast_mask)
+            output_path = zone_dir / f"mask_rgb_{target_yr}.png"
+            Image.fromarray(forecast_rgb).save(output_path)
+            logger.info(f"  Saved U-Net forecasted mask for {target_yr}: {output_path.name}")
+
+    if target_year <= 2023:
+        return masks[target_year]
 
     # Rebuild complete timeseries with forecasts
     new_timeseries = []
