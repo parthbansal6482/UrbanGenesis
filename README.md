@@ -55,7 +55,8 @@ FarmGuard/
 ├── docs/                      # Architectural and specification documentation
 │   ├── architecture.md        # Architecture topology and data flows
 │   ├── platform_specification.md # Sat4Risk / MRV / LULC classes specification
-│   └── developer_guide.md     # API reference and developer configuration guide
+│   ├── developer_guide.md     # API reference and developer configuration guide
+│   └── product.md             # Product personas, purpose, and design principles
 ├── app.py                     # Thin shim FastAPI backend server
 ├── run_pipeline.py            # CLI entrypoint for the ETL pipeline
 ├── requirements.txt           # Python backend dependencies
@@ -122,6 +123,7 @@ For further details, refer to the documents in the `docs/` folder:
 - See [docs/architecture.md](file:///Users/parthbansal/Projects/UrbanGenesis/docs/architecture.md) for data flows, sequencing, and component interactions.
 - See [docs/platform_specification.md](file:///Users/parthbansal/Projects/UrbanGenesis/docs/platform_specification.md) for Satyukt Sat4Risk/MRV business cases and math index derivations.
 - See [docs/developer_guide.md](file:///Users/parthbansal/Projects/UrbanGenesis/docs/developer_guide.md) for environment configuration matrices and REST endpoints.
+- See [docs/product.md](file:///Users/parthbansal/Projects/UrbanGenesis/docs/product.md) for target user personas, core brand personality, and UI design principles.
 
 ---
 

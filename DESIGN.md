@@ -28,6 +28,8 @@ A clean, structured modern light-mode dashboard designed for agriculture analyst
 ## Components
 - **Primary Button**: `#059669` background, `#FFFFFF` text, `border-radius: 8px`, `padding: 10px 20px`, active hover state `#047857`.
 - **Panel Card**: `#FFFFFF` background, `border-radius: 12px`, `border: 1px solid #E2E8F0`, `padding: 20px`.
+- **Segmented Toggle**: Grouped buttons with `#059669` background and `#FFFFFF` text for the active item, and `#FFFFFF` background with `#E2E8F0` borders and `#475569` text for inactive options.
+- **Form Inputs**: Numeric coordinate entry boxes with clear placeholder labels, border color transitions (neutral `#E2E8F0` to active Emerald `#059669`), and compact descriptive helper text.
 - **Status Badge**:
   - Critical: background `#FEE2E2`, text `#991B1B`.
   - Stable: background `#D1FAE5`, text `#065F46`.

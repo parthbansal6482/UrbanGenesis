@@ -22,8 +22,10 @@ Configure these settings inside the root `.env` file:
 ### A. Fetch Registered Farmland Zones
 * **URL**: `/api/zones`
 * **Method**: `GET`
+* **Parameters**:
+  - `format` (str, Optional): Determines response format. `list` (default) returns an array. `object` returns a dictionary keyed by zone key.
 * **Headers**: `Cache-Control: public, max-age=300`
-* **Response**:
+* **Response (Default list format)**:
   ```json
   [
     {
@@ -109,6 +111,38 @@ Configure these settings inside the root `.env` file:
   }
   ```
 
+### C. Run Custom Bounding Box Analysis
+Runs on-demand ETL ingestion, LULC class conversion, Agricultural Buffer Index computation, and U-Net 2025 forecasting for any custom geographic bounding box.
+
+* **URL**: `/api/analyse_bbox`
+* **Method**: `POST`
+* **Headers**: `Content-Type: application/json`
+* **Request Body**:
+  ```json
+  {
+    "bbox": [73.72, 20.05, 73.98, 20.25],
+    "name": "Custom Region Name",
+    "before": 2017,
+    "after": 2023,
+    "mock": false
+  }
+  ```
+  * `bbox` (array of floats, Required): Bounding box coordinates in `[min_lon, min_lat, max_lon, max_lat]` order (WGS84). BBox width and height must not exceed `0.45` degrees (~50km x 50km).
+  * `name` (str, Optional): Custom display name for the region.
+  * `before` (int, Optional): Starting comparison year. Defaults to `2017`.
+  * `after` (int, Optional): Ending comparison year. Defaults to `2023`.
+  * `mock` (bool, Optional): Set to `true` to force using local synthetic mocks for the bounding box bounds instead of STAC/Sentinel-2 network queries.
+* **Response**: Returns a JSON payload with the identical schema as `/api/analyse`, except overlay paths point to `/static_custom/{cache_key}/{filename}`.
+* **Caching**: Results are deterministically cached under `demo/custom_cache/{cache_key}/` to eliminate redundant remote data fetches on subsequent requests.
+
+### D. Fetch Custom Region Static Overlay
+* **URL**: `/static_custom/{cache_key}/{filename}`
+* **Method**: `GET`
+* **Parameters**:
+  - `cache_key` (str, Required): MD5 hash representing the custom region coordinate parameters.
+  - `filename` (str, Required): Name of the generated asset file (e.g. `true_color_2023.png`, `ndvi_map_2023.png`, `mask_rgb_2023.png`, `encroachment_heatmap.png`, `forecast_mask_rgb_2025.png`).
+* **Response**: Binary image data stream (`image/png`).
+
 ---
 
 ## 3. Development Workflow
@@ -139,3 +173,10 @@ npm run dev
 ```bash
 PYTHONPATH=. pytest tests/ -v
 ```
+
+### Backtest U-Net Forecasting Model
+To run backtesting evaluations comparing historical 2021 training cutoffs with real 2023 ground-truth outcomes:
+```bash
+python scripts/backtest_unet.py
+```
+This script computes Pixel Accuracy and ABI Prediction Error, generating comparison overlays under the `backtest_results/` directory.

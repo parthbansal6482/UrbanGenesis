@@ -23,14 +23,15 @@ UrbanGenesis/
 ├── core/                        # Shared constants and utilities (no internal deps)
 │   ├── class_map.py             # CLASS_INFO, CLASS_RGB, CLASS_COLORS, ESRI_TO_FARMGUARD
 │   ├── config.py                # load_config(), PRECOMPUTED_DIR, safe_float()
-│   └── image_utils.py           # rgb_to_mask(), mask_to_rgb()
+│   ├── image_utils.py           # rgb_to_mask(), mask_to_rgb()
+│   └── bbox_utils.py            # validate_bbox(), bbox_cache_key()
 │
 ├── api/                         # FastAPI HTTP layer
 │   ├── main.py                  # create_app() — CORS, middleware, static mount, routers
 │   ├── dependencies.py          # load_zone_verdict() (LRU-cached), get_zones_config()
 │   └── routes/
-│       ├── zones.py             # GET /api/zones
-│       └── analyse.py           # GET /api/analyse
+│       ├── zones.py             # GET /api/zones (supports format=object query)
+│       └── analyse.py           # GET /api/analyse, POST /api/analyse_bbox, GET /static_custom/...
 │
 ├── pipeline/                    # ETL / data acquisition layer
 │   ├── stac_client.py           # create_stac_client() — authenticated STAC client factory
@@ -38,7 +39,8 @@ UrbanGenesis/
 │   ├── sentinel_fetcher.py      # fetch_sentinel2_true_color()
 │   ├── ndvi.py                  # generate_ndvi_map_from_bands()
 │   ├── mock_generator.py        # generate_realistic_mock(), mask_to_true_color()
-│   └── zone_pipeline.py         # generate_zone_assets() — full orchestrator
+│   ├── zone_pipeline.py         # generate_zone_assets() — full orchestrator
+│   └── custom_region_pipeline.py # run_custom_region_pipeline() — on-demand dynamic ETL
 │
 ├── analytics/                   # Pure computation — no file I/O
 │   ├── abi.py                   # compute_abi(), compute_abi_timeseries()
@@ -54,12 +56,17 @@ UrbanGenesis/
 ├── config/
 │   └── settings.yaml            # Zone definitions, model config, STAC endpoint
 │
-├── dashboard/                   # Next.js 16 frontend
-├── demo/precomputed/            # Precomputed PNGs and verdict.json files
+├── dashboard/                   # Next.js 16 frontend (supports drawing & manual coordinate entry)
+├── demo/
+│   ├── precomputed/             # Precomputed PNGs and verdict.json files for named zones
+│   └── custom_cache/            # On-demand dynamically generated assets for custom BBoxes
 ├── docs/                        # Architecture, platform spec, developer guide
 │
 ├── app.py                       # Thin shim: `from api.main import create_app`
-└── run_pipeline.py              # CLI entrypoint for the ETL pipeline
+├── run_pipeline.py              # CLI entrypoint for the ETL pipeline
+└── scripts/
+    ├── forecast_unet.py         # U-Net forecasting script (supports backtesting runs)
+    └── backtest_unet.py         # U-Net accuracy evaluation & comparison map generator
 ```
 
 ---
@@ -89,6 +96,7 @@ The dependency-free kernel. Every other package may freely import from here.
 - **`class_map.py`**: Single source of truth for all land-cover class IDs, hex colors, and ESRI→FarmGuard remapping. Eliminates duplication that previously existed between `app.py` and the old monolithic script.
 - **`config.py`**: Loads `config/settings.yaml` once at import time and exposes `ZONES_CONFIG`, `PRECOMPUTED_DIR`, and `safe_float()` — the NaN/Infinity sanitizer used before any JSON serialization.
 - **`image_utils.py`**: Vectorized `rgb_to_mask()` and `mask_to_rgb()` — used by both the API (dynamic heatmap generation) and the pipeline (precomputed asset generation).
+- **`bbox_utils.py`**: Validates user-supplied bounding boxes (ensures valid coordinates and bounds area ≤ 50x50 km) and generates unique deterministic cache keys (`custom_region_lon_lat_lon_lat`) for tracking dynamic requests.
 
 ### 2. Ingestion Pipeline (`pipeline/`)
 
@@ -98,6 +106,7 @@ The dependency-free kernel. Every other package may freely import from here.
 - **`ndvi.py`**: Computes `(NIR - Red) / (NIR + Red)` and applies the `RdYlGn` colormap.
 - **`mock_generator.py`**: Gaussian-blur rank-assignment mock for offline development. Zone-specific class proportion profiles with time-interpolated drift rates.
 - **`zone_pipeline.py`**: Orchestrates all of the above for a single zone/year. Writes `true_color_YYYY.png`, `ndvi_map_YYYY.png`, `mask_rgb_YYYY.png`, `encroachment_heatmap.png`, and `verdict.json` to `demo/precomputed/<zone_key>/`.
+- **`custom_region_pipeline.py`**: Dynamically runs the ETL and forecasting pipeline for arbitrary user-specified bounding boxes on the fly. Queries Sentinel-2 STAC and ESRI LULC catalogs, executes change detection, calculates the Agricultural Buffer Index, runs the U-Net forecaster to predict the 2025 LULC cover, and caches all artifacts in `demo/custom_cache/<cache_key>/`. Supports fallback to mock generation for offline usage/testing.
 
 ### 3. Analytical Engine (`analytics/`)
 
@@ -114,14 +123,23 @@ Pure computation — no file I/O, no HTTP, no FarmGuard-internal imports.
 
 - **`main.py`**: `create_app()` factory — CORS (env-driven), Cache-Control middleware for `/static/*`, static file mount, router registration.
 - **`dependencies.py`**: `load_zone_verdict()` with `@functools.lru_cache(maxsize=16)` — in-process caching of verdict.json files. Sanitizes raw JSON for NaN/Infinity before returning.
-- **`routes/zones.py`**: `GET /api/zones` — returns all zones with summary metrics. `Cache-Control: public, max-age=300`.
-- **`routes/analyse.py`**: `GET /api/analyse` — full zone analysis with dynamic encroachment heatmap generation and caching, year-range comparison, transitions, and overlay URLs.
+- **`routes/zones.py`**: `GET /api/zones` — returns all zones with summary metrics. `Cache-Control: public, max-age=300`. Supports a `format=object` query parameter to return zones as a keyed dictionary.
+- **`routes/analyse.py`**:
+  - `GET /api/analyse`: Full zone analysis with dynamic encroachment heatmap generation, year-range comparison, transitions, and overlay URLs.
+  - `POST /api/analyse_bbox`: Runs dynamic analysis for custom bounding boxes on-demand. Validates the box, runs `custom_region_pipeline`, and returns a standardized payload matching `/api/analyse`.
+  - `GET /static_custom/{cache_key}/{filename}`: Dynamically serves cached PNG assets (True Color, LULC masks, NDVI maps, change heatmaps) generated for custom bounding boxes.
 
 ### 5. Next.js 16 Dashboard (`dashboard/`)
 
+- **Mode Selection**: Three-way selector allowing users to choose a pre-registered Named Zone, draw a BBox on the interactive Leaflet map, or manually enter latitude/longitude coordinates.
 - **Interactive Map**: Leaflet overlays projecting RGB masks, True Color bands, and NDVI. Comparative split-screen sliding.
 - **Timeline Visualization**: Custom SVG `LineChart` and `EncroachmentChart` for historical ABI and component trends.
 - **Fault-Tolerance**: Seamless offline fallback to pre-packaged timeseries data when the backend is unreachable.
+
+### 6. Forecast & Backtesting Suite (`scripts/`)
+
+- **`forecast_unet.py`**: Implementation of the U-Net model forecasting land usage. Refactored to support configurable evaluation runs (e.g., training/cutoff at 2021 to forecast 2023) without overwriting active production directories.
+- **`backtest_unet.py`**: Evaluation script that computes backtest metrics (Pixel Accuracy and ABI Prediction Error) for all four pre-registered zones comparing predictions from 2021 to 2023 against the real 2023 ESRI LULC ground truth. Generates side-by-side verification maps (`actual_vs_predicted.png` and `difference_map.png`).
 
 ---
 
@@ -139,6 +157,9 @@ python run_pipeline.py --zone nashik_north
 
 # Run ETL pipeline (offline synthetic data)
 python run_pipeline.py --mock
+
+# Run U-Net Forecast Backtesting Suite
+python scripts/backtest_unet.py
 
 # Start the Next.js dashboard
 cd dashboard && npm run dev

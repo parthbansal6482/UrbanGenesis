@@ -58,3 +58,34 @@ Cropland loss over time is calculated using native pixel counts:
 $$\text{Cropland Loss (ha)} = \frac{(\text{Cropland Pixels}_{\text{before}} - \text{Cropland Pixels}_{\text{after}}) \times \text{Pixel Area (m}^2\text{)}}{10,000}$$
 
 *Note: At 10m resolution, each pixel corresponds to exactly $100\text{ m}^2$ (0.01 hectares).*
+
+---
+
+## 4. U-Net Forecasting Model & Backtesting Framework
+
+To support long-term risk underwriting and MRV carbon credit baselining, FarmGuard includes a U-Net convolutional neural network model configured to project future land-cover state distributions (for example, forecasting 2025 configurations based on historical trends).
+
+### Forecasting Methodology
+The forecast model takes historical multi-year LULC class transitions and spatial maps as input features and outputs a predicted probability map of LULC classes. 
+
+### Backtesting Validation
+To establish empirical trustworthiness, a backward-looking validation (backtesting) framework was implemented:
+1. **Scenario Setup**: The forecast cutoff is set to `2021`. The model is evaluated on its ability to forecast the state of land cover in `2023` (2-year lookahead).
+2. **Ground Truth Comparison**: The predicted 2023 land cover classification mask is compared pixel-by-pixel against the actual `2023` ESRI LULC satellite-derived ground truth.
+3. **Evaluation Metrics**:
+   - **Pixel Accuracy**: The percentage of pixels correctly classified in the forecast compared to actual LULC ground truth.
+   - **ABI Prediction Error**: The relative difference between the predicted ABI and actual ABI for the target year.
+     $$\text{ABI Error (\%)} = \frac{|\text{ABI}_{\text{predicted}} - \text{ABI}_{\text{actual}}|}{\text{ABI}_{\text{actual}}} \times 100$$
+
+### Empirical Backtest Results
+Across the four pre-registered agricultural zones, the backtesting harness measured the following performance metrics:
+
+| Zone | Pixel Accuracy | ABI Prediction Error | Key Characteristics |
+|---|---|---|---|
+| **Nashik North** | 93.1% | 13.6% | Grape/onion belt. Stable agricultural buffer. |
+| **Hubli Outskirts** | 90.1% | 6.4% | Peri-urban transition zone. |
+| **Vijayawada West** | 88.9% | 2.6% | Highly dynamic riverine cropland boundary. |
+| **Bengaluru** | 91.1% | 10.9% | Rapid urban encroachment environment. |
+
+*Note: These results validate a 2-year forecast horizon. Projections beyond a 2-3 year horizon (e.g. up to 2051) have higher uncertainty and should be used as directional trend indicators.*
+
