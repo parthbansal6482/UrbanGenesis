@@ -71,6 +71,11 @@ def main() -> None:
         action="store_true",
         help="Use synthetic mock data (no Planetary Computer network calls)",
     )
+    parser.add_argument(
+        "--forecast",
+        action="store_true",
+        help="Run U-Net spatial forecasting recursively up to 2051 using trained weights",
+    )
     args = parser.parse_args()
 
     all_zones = _load_zones()
@@ -96,12 +101,55 @@ def main() -> None:
     for zone_key, zone_cfg in zones.items():
         bbox = zone_cfg.get("bbox")
         years = zone_cfg.get("years", [2017, 2019, 2021, 2023])
+        if args.forecast:
+            # Restrict ETL to historical baseline years needed by U-Net
+            years = [y for y in years if y <= 2023]
         logger.info("\n%s", "=" * 60)
         logger.info(
             "Zone: %s  |  BBox: %s  |  Years: %s",
             zone_cfg.get("name", zone_key), bbox, years,
         )
         generate_zone_assets(zone_key, bbox, years, use_network=use_network)
+
+    if args.forecast:
+        logger.info("\n" + "=" * 60)
+        logger.info("Running U-Net future spatial growth forecasting...")
+        import torch
+        from core.unet_model import UNet
+        from scripts.forecast_unet import forecast_zone
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if device.type == "cpu":
+            torch.set_num_threads(2)
+            torch.set_num_interop_threads(1)
+
+        load_path = Path(__file__).resolve().parent / "model" / "checkpoints" / "unet_weights.pt"
+        if not load_path.exists():
+            logger.error(f"U-Net checkpoint not found at: {load_path}")
+            logger.error("Please train the U-Net model first by running: python scripts/train_unet.py")
+            sys.exit(1)
+
+        model = UNet(in_channels=22, out_channels=6).to(device)
+        model.load_state_dict(torch.load(load_path, map_location=device))
+        model.eval()
+        logger.info(f"Loaded trained U-Net weights from {load_path}")
+
+        import os
+        cpu_cores = os.cpu_count() or 2
+        if device.type == "cuda":
+            batch_size = 128
+            num_workers = min(2, cpu_cores)
+            pin_memory = True
+            use_amp = True
+        else:
+            batch_size = 8
+            num_workers = 0
+            pin_memory = False
+            use_amp = False
+
+        for zone_key in zones.keys():
+            logger.info(f"\nForecasting zone: {zone_key}")
+            forecast_zone(zone_key, model, device, batch_size, num_workers, pin_memory, use_amp)
 
     logger.info("\nAll zones processed.")
     from core.config import PRECOMPUTED_DIR
