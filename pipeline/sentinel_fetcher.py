@@ -58,33 +58,39 @@ def _fetch_single_s2_band(
     from rasterio.warp import transform_bounds
     from rasterio.windows import from_bounds
 
-    with rasterio.open(signed_href) as src:
-        src_crs = src.crs
-        if src_crs and str(src_crs).upper() not in ("EPSG:4326", "CRS84"):
-            left, bottom, right, top = transform_bounds(
-                "EPSG:4326", src_crs, lon_min, lat_min, lon_max, lat_max
-            )
-        else:
-            left, bottom, right, top = lon_min, lat_min, lon_max, lat_max
+    with rasterio.Env(
+        GDAL_HTTP_TIMEOUT=30,
+        GDAL_HTTP_CONNECTTIMEOUT=15,
+        GDAL_HTTP_MAX_RETRY=5,
+        GDAL_HTTP_RETRY_DELAY=2,
+    ):
+        with rasterio.open(signed_href) as src:
+            src_crs = src.crs
+            if src_crs and str(src_crs).upper() not in ("EPSG:4326", "CRS84"):
+                left, bottom, right, top = transform_bounds(
+                    "EPSG:4326", src_crs, lon_min, lat_min, lon_max, lat_max
+                )
+            else:
+                left, bottom, right, top = lon_min, lat_min, lon_max, lat_max
 
-        window = from_bounds(left, bottom, right, top, src.transform)
+            window = from_bounds(left, bottom, right, top, src.transform)
 
-        if output_shape is None:
-            out_h = int(round(window.height))
-            out_w = int(round(window.width))
-        elif isinstance(output_shape, int):
-            out_h, out_w = output_shape, output_shape
-        else:
-            out_h, out_w = output_shape
+            if output_shape is None:
+                out_h = int(round(window.height))
+                out_w = int(round(window.width))
+            elif isinstance(output_shape, int):
+                out_h, out_w = output_shape, output_shape
+            else:
+                out_h, out_w = output_shape
 
-        return src.read(
-            1,
-            window=window,
-            out_shape=(out_h, out_w),
-            resampling=Resampling.bilinear,
-            boundless=True,
-            fill_value=0,
-        ).astype(np.float32)
+            return src.read(
+                1,
+                window=window,
+                out_shape=(out_h, out_w),
+                resampling=Resampling.bilinear,
+                boundless=True,
+                fill_value=0,
+            ).astype(np.float32)
 
 
 # ---------------------------------------------------------------------------
@@ -158,38 +164,66 @@ def fetch_sentinel2_true_color(
         stage_best_cloud = 100.0
         stage_best_items: list = []
 
-        for date_str, group_items in sorted(date_groups.items()):
-            combined_mask = np.zeros((64, 64), dtype=bool)
+        def bbox_contains(tile_bbox: list[float], query_bbox: list[float]) -> bool:
+            return (
+                tile_bbox[0] <= query_bbox[0]
+                and tile_bbox[1] <= query_bbox[1]
+                and tile_bbox[2] >= query_bbox[2]
+                and tile_bbox[3] >= query_bbox[3]
+            )
+
+        # Sort date groups by the minimum cloud cover of their items (clearest first)
+        sorted_date_groups = sorted(
+            date_groups.items(),
+            key=lambda x: min(item.properties.get("eo:cloud_cover", 100.0) for item in x[1])
+        )
+
+        for date_str, group_items in sorted_date_groups:
             total_cloud = 0.0
 
+            # Fast-path check: if any tile fully contains the query bbox, coverage is 100%
+            contained = False
             for item in group_items:
-                try:
-                    href = item.assets["B04"].href
-                    signed_href = planetary_computer.sign(href)
-                    with rasterio.open(signed_href) as src:
-                        src_crs = src.crs
-                        if src_crs and str(src_crs).upper() not in ("EPSG:4326", "CRS84"):
-                            left, bottom, right, top = transform_bounds(
-                                "EPSG:4326", src_crs, lon_min, lat_min, lon_max, lat_max
-                            )
-                        else:
-                            left, bottom, right, top = lon_min, lat_min, lon_max, lat_max
-                        window = from_bounds(left, bottom, right, top, src.transform)
-                        test_data = src.read(
-                            1, window=window, out_shape=(64, 64), boundless=True, fill_value=0
-                        )
-                        combined_mask |= test_data > 0
-                        total_cloud += item.properties.get("eo:cloud_cover", 0.0)
-                except Exception as exc:
-                    logger.warning("Failed to inspect %s on %s: %s", item.id, date_str, exc)
-                    continue
+                if item.bbox and bbox_contains(item.bbox, bbox):
+                    contained = True
+                    break
 
-            coverage_pct = np.mean(combined_mask) * 100
-            avg_cloud = total_cloud / len(group_items) if group_items else 100.0
-            logger.info(
-                "  Date %s: coverage=%.2f%%, avg_cloud=%.2f%% (%d tiles)",
-                date_str, coverage_pct, avg_cloud, len(group_items),
-            )
+            if contained:
+                coverage_pct = 100.0
+                total_cloud = sum(item.properties.get("eo:cloud_cover", 0.0) for item in group_items)
+                avg_cloud = total_cloud / len(group_items) if group_items else 100.0
+                logger.info(
+                    "  Date %s: Fast-path 100%% coverage verified (bbox containment)",
+                    date_str
+                )
+            else:
+                try:
+                    from shapely.geometry import box as s_box, shape as s_shape
+                    from shapely.ops import unary_union
+
+                    query_poly = s_box(lon_min, lat_min, lon_max, lat_max)
+                    item_polys = []
+                    for item in group_items:
+                        if item.geometry:
+                            item_polys.append(s_shape(item.geometry))
+                            total_cloud += item.properties.get("eo:cloud_cover", 0.0)
+
+                    if item_polys:
+                        group_poly = unary_union(item_polys)
+                        intersection = query_poly.intersection(group_poly)
+                        coverage_pct = (intersection.area / query_poly.area) * 100
+                    else:
+                        coverage_pct = 0.0
+
+                    avg_cloud = total_cloud / len(group_items) if group_items else 100.0
+                    logger.info(
+                        "  Date %s: geometric coverage=%.2f%%, avg_cloud=%.2f%% (%d tiles)",
+                        date_str, coverage_pct, avg_cloud, len(group_items),
+                    )
+                except Exception as exc:
+                    logger.warning("Failed geometric check on %s: %s", date_str, exc)
+                    coverage_pct = 0.0
+                    avg_cloud = 100.0
 
             if coverage_pct > stage_best_coverage + 1.0:
                 stage_best_coverage, stage_best_cloud = coverage_pct, avg_cloud
@@ -197,6 +231,11 @@ def fetch_sentinel2_true_color(
             elif abs(coverage_pct - stage_best_coverage) <= 1.0 and avg_cloud < stage_best_cloud:
                 stage_best_coverage, stage_best_cloud = coverage_pct, avg_cloud
                 stage_best_date, stage_best_items = date_str, group_items
+
+            # Early break: if we found an excellent candidate, stop evaluating other dates in this stage
+            if stage_best_coverage >= 98.0 and stage_best_cloud < 15.0:
+                logger.info("  Stopping search in this stage: found excellent candidate %s", stage_best_date)
+                break
 
         if stage_best_coverage > best_coverage_pct:
             best_coverage_pct = stage_best_coverage
