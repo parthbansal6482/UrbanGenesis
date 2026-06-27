@@ -282,7 +282,8 @@ class BBoxAnalyseRequest(BaseModel):
 def analyse_bbox(request: BBoxAnalyseRequest):
     bbox = (request.min_lon, request.min_lat, request.max_lon, request.max_lat)
     try:
-        verdict = get_cached_or_analyse(bbox, years=request.years)
+        target_years = [2017, 2019, 2021, 2023]
+        verdict = get_cached_or_analyse(bbox, years=target_years)
         cache_key = bbox_cache_key(bbox)
 
         # Build the exact same output structure as analyse_zone
@@ -292,8 +293,8 @@ def analyse_bbox(request: BBoxAnalyseRequest):
         if not available_years:
             raise HTTPException(status_code=500, detail="No timeseries data found.")
 
-        before_yr = request.years[0] if request.years else available_years[0]
-        after_yr = request.years[-1] if request.years else available_years[-1]
+        before_yr = request.years[0] if (request.years and len(request.years) > 0) else available_years[0]
+        after_yr = request.years[-1] if (request.years and len(request.years) > 1) else available_years[-1]
 
         rec_before = next((r for r in timeseries if r["year"] == before_yr), None)
         rec_after = next((r for r in timeseries if r["year"] == after_yr), None)

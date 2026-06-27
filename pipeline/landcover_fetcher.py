@@ -96,25 +96,31 @@ def fetch_esri_landcover_tile(
         href = item.assets["data"].href
         try:
             signed_href = planetary_computer.sign(href)
-            with rasterio.open(signed_href) as src:
-                src_crs = src.crs
-                if src_crs and str(src_crs).upper() not in ("EPSG:4326", "CRS84"):
-                    left, bottom, right, top = transform_bounds(
-                        "EPSG:4326", src_crs, lon_min, lat_min, lon_max, lat_max
-                    )
-                else:
-                    left, bottom, right, top = lon_min, lat_min, lon_max, lat_max
+            with rasterio.Env(
+                GDAL_HTTP_TIMEOUT=30,
+                GDAL_HTTP_CONNECTTIMEOUT=15,
+                GDAL_HTTP_MAX_RETRY=5,
+                GDAL_HTTP_RETRY_DELAY=2,
+            ):
+                with rasterio.open(signed_href) as src:
+                    src_crs = src.crs
+                    if src_crs and str(src_crs).upper() not in ("EPSG:4326", "CRS84"):
+                        left, bottom, right, top = transform_bounds(
+                            "EPSG:4326", src_crs, lon_min, lat_min, lon_max, lat_max
+                        )
+                    else:
+                        left, bottom, right, top = lon_min, lat_min, lon_max, lat_max
 
-                window = from_bounds(left, bottom, right, top, src.transform)
-                data = src.read(
-                    1,
-                    window=window,
-                    out_shape=(out_h, out_w),
-                    resampling=Resampling.nearest,
-                    boundless=True,
-                    fill_value=0,
-                )
-                all_tiles.append(data)
+                    window = from_bounds(left, bottom, right, top, src.transform)
+                    data = src.read(
+                        1,
+                        window=window,
+                        out_shape=(out_h, out_w),
+                        resampling=Resampling.nearest,
+                        boundless=True,
+                        fill_value=0,
+                    )
+                    all_tiles.append(data)
         except Exception as exc:
             logger.warning("Failed to read ESRI LC tile: %s", exc)
             continue

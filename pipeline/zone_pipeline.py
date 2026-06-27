@@ -53,12 +53,14 @@ def _process_single_year(
 
     if use_network:
         try:
-            # 1. Fetch Sentinel-2 at native 10 m/px resolution
-            tc_rgb, bands = fetch_sentinel2_true_color(bbox, year, output_size=None)
+            is_custom = zone_key.startswith("bbox_")
+            output_size = 512 if is_custom else None
+            # 1. Fetch Sentinel-2
+            tc_rgb, bands = fetch_sentinel2_true_color(bbox, year, output_size=output_size)
 
             if tc_rgb is not None:
                 h, w = tc_rgb.shape[:2]
-                logger.info("  Sentinel-2 fetched at native size: %dx%d (10 m/px)", w, h)
+                logger.info("  Sentinel-2 fetched at size: %dx%d", w, h)
                 Image.fromarray(tc_rgb).save(zone_dir / f"true_color_{year}.png")
 
                 if bands is not None:
@@ -66,11 +68,12 @@ def _process_single_year(
                     ndvi_img = generate_ndvi_map_from_bands(red, green, blue, nir)
                     Image.fromarray(ndvi_img).save(zone_dir / f"ndvi_map_{year}.png")
 
-                # 2. Fetch ESRI LC at the same native shape
+                # 2. Fetch ESRI LC at the same shape
                 fg_mask, _ = fetch_esri_landcover_tile(bbox, year, output_shape=(h, w))
             else:
-                logger.warning("  Sentinel-2 failed; falling back to 1024 px for ESRI LC.")
-                fg_mask, _ = fetch_esri_landcover_tile(bbox, year, output_shape=(1024, 1024))
+                fallback_shape = 512 if is_custom else 1024
+                logger.warning("  Sentinel-2 failed; falling back to %d px for ESRI LC.", fallback_shape)
+                fg_mask, _ = fetch_esri_landcover_tile(bbox, year, output_shape=(fallback_shape, fallback_shape))
 
             if fg_mask is not None:
                 logger.info("  ESRI Land Cover fetched for %d", year)
@@ -125,30 +128,29 @@ def generate_zone_assets(
     zone_dir.mkdir(parents=True, exist_ok=True)
 
     timeseries_stats: list[dict] = []
-    first_year_mask: np.ndarray | None = None
-    last_year_mask: np.ndarray | None = None
+    masks_by_year: dict[int, np.ndarray] = {}
 
-    for year in years:
-        logger.info("Processing %s — %d…", zone_key, year)
-        fg_mask = _process_single_year(zone_key, zone_dir, bbox, year, use_network)
-
-        if year == years[0]:
-            first_year_mask = fg_mask
-        if year == years[-1]:
-            last_year_mask = fg_mask
-
+    for yr in years:
+        logger.info("Processing %s — %d…", zone_key, yr)
+        mask = _process_single_year(zone_key, zone_dir, bbox, yr, use_network)
+        
         # Compute ABI + supplementary percentage stats for this year
-        stats = compute_abi(fg_mask)
-        stats["year"] = year
-        stats["soil_pixels"] = int((fg_mask == 5).sum())
-        stats["soil_pct"] = round(stats["soil_pixels"] / fg_mask.size * 100, 2)
-        stats["buildings_pct"] = round(stats["buildings_pixels"] / fg_mask.size * 100, 2)
-        stats["vegetation_pct"] = round(stats["vegetation_pixels"] / fg_mask.size * 100, 2)
-        stats["water_pct"] = round(stats["water_pixels"] / fg_mask.size * 100, 2)
-        stats["cropland_pct"] = round(stats["cropland_pixels"] / fg_mask.size * 100, 2)
+        stats = compute_abi(mask)
+        stats["year"] = yr
+        stats["soil_pixels"] = int((mask == 5).sum())
+        stats["soil_pct"] = round(stats["soil_pixels"] / mask.size * 100, 2)
+        stats["buildings_pct"] = round(stats["buildings_pixels"] / mask.size * 100, 2)
+        stats["vegetation_pct"] = round(stats["vegetation_pixels"] / mask.size * 100, 2)
+        stats["water_pct"] = round(stats["water_pixels"] / mask.size * 100, 2)
+        stats["cropland_pct"] = round(stats["cropland_pixels"] / mask.size * 100, 2)
+        
+        masks_by_year[yr] = mask
         timeseries_stats.append(stats)
 
     timeseries_stats = sorted(timeseries_stats, key=lambda x: x["year"])
+    sorted_years = sorted(years)
+    first_year_mask = masks_by_year[sorted_years[0]]
+    last_year_mask = masks_by_year[sorted_years[-1]]
 
     # Encroachment analysis — compare first vs last year
     loss_ha = 0.0
@@ -172,7 +174,7 @@ def generate_zone_assets(
     verdict_path = zone_dir / "verdict.json"
     with open(verdict_path, "w") as fh:
         json.dump(verdict, fh, indent=2)
-
+ 
     logger.info(
         "  Grade %s  (ABI=%.3f, Crop loss=%.1f ha, Encroachment=%.1f ha)",
         verdict["grade"], verdict["abi"], loss_ha,

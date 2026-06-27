@@ -6,9 +6,9 @@ This document details the functional specifications, domain modeling, LULC taxon
 
 ## 1. Context & Business Domain
 
-Rapid urban sprawl degrades surrounding agricultural land and ecosystems. FarmGuard provides spatial remote sensing diagnostics for farmland encroachment monitoring, supporting Satyukt Analytics' core commercial applications:
+Rapid urban sprawl degrades surrounding agricultural land and ecosystems. FarmGuard provides spatial remote sensing diagnostics for farmland encroachment monitoring, supporting core commercial applications:
 
-### A. Sat4Risk (Hydrological Hazard Modeling)
+### A. Hydrological Hazard Modeling
 - **Problem**: Urban sprawl converts permeable soil, cropland, and natural wetlands into impermeable built-up surfaces (concrete, roads). This reduces regional water retention, accelerating storm runoff.
 - **Application**: Tracks changes in the Agricultural Buffer Index (ABI) to dynamically recalibrate flood and drought hazard models.
 

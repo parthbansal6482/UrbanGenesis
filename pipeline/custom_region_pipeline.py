@@ -19,7 +19,7 @@ from pipeline.zone_pipeline import generate_zone_assets
 logger = logging.getLogger(__name__)
 
 CUSTOM_REGION_CACHE_DIR = Path("demo/custom_cache")
-DEFAULT_COMPARISON_YEARS = [2019, 2023]  # sensible default for now
+DEFAULT_COMPARISON_YEARS = [2017, 2019, 2021, 2023]  # full timeline by default
 
 
 def analyse_custom_bbox(
@@ -42,6 +42,7 @@ def analyse_custom_bbox(
 
     logger.info(f"Running custom-region analysis for bbox={bbox}, years={years}")
 
+    use_network = True
     # Check if satellite data is available for the bbox
     try:
         from pipeline.stac_client import create_stac_client
@@ -62,7 +63,8 @@ def analyse_custom_bbox(
     except ValueError:
         raise
     except Exception as e:
-        logger.warning(f"Could not verify STAC data availability (possibly offline): {e}")
+        logger.warning(f"Could not verify STAC data availability (possibly offline): {e} — using mock mode.")
+        use_network = False
 
     try:
         assets = generate_zone_assets(
@@ -70,6 +72,7 @@ def analyse_custom_bbox(
             bbox=list(bbox),
             output_dir=region_dir,
             years=years,
+            use_network=use_network,
         )
     except Exception as e:
         logger.error(f"Data unavailable for bbox {bbox}: {e}")
@@ -84,19 +87,26 @@ def analyse_custom_bbox(
 
 def get_cached_or_analyse(bbox: Tuple[float, float, float, float], years: list = None) -> Dict:
     """
-    Checks for a cached result first. If found and not stale, returns it.
+    Checks for a cached result first. If found and has all requested years, returns it.
     Otherwise runs the full analysis and caches the result.
     """
     bbox = validate_bbox(bbox)
     cache_key = bbox_cache_key(bbox)
     verdict_path = CUSTOM_REGION_CACHE_DIR / cache_key / "verdict.json"
+    target_years = years or DEFAULT_COMPARISON_YEARS
 
     if verdict_path.exists():
         import json
 
-        logger.info(f"Cache hit for {cache_key}")
-        with open(verdict_path) as f:
-            return json.load(f)
+        logger.info(f"Cache hit for {cache_key}, checking years")
+        try:
+            with open(verdict_path) as f:
+                data = json.load(f)
+                cached_years = {r["year"] for r in data.get("timeseries", [])}
+                if all(y in cached_years for y in target_years):
+                    return data
+        except Exception as e:
+            logger.warning(f"Error reading cache for {cache_key}: {e}")
 
-    logger.info(f"Cache miss for {cache_key} — running fresh analysis")
-    return analyse_custom_bbox(bbox, years)
+    logger.info(f"Cache miss or incomplete for {cache_key} — running fresh analysis")
+    return analyse_custom_bbox(bbox, target_years)

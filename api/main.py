@@ -16,6 +16,13 @@ so that all existing run commands (``python app.py``,
 
 import logging
 import os
+import socket
+
+# Prevent long network hangs on on-demand dynamic custom bboxes using robust GDAL config
+os.environ["GDAL_HTTP_TIMEOUT"] = "30"
+os.environ["GDAL_HTTP_CONNECTTIMEOUT"] = "15"
+os.environ["GDAL_HTTP_MAX_RETRY"] = "5"
+os.environ["GDAL_HTTP_RETRY_DELAY"] = "2"
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
