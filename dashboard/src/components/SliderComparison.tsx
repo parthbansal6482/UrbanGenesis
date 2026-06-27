@@ -117,24 +117,7 @@ export default function SliderComparison({
     img.crossOrigin = "anonymous";
 
     img.onload = () => {
-      if (!maskMode) {
-        onDone(finalUrl);
-        return;
-      }
-      // Mask: make black pixels transparent
-      const cv = document.createElement("canvas");
-      cv.width = img.width;
-      cv.height = img.height;
-      const cx = cv.getContext("2d")!;
-      cx.drawImage(img, 0, 0);
-      const id = cx.getImageData(0, 0, cv.width, cv.height);
-      for (let i = 0; i < id.data.length; i += 4) {
-        if (id.data[i] === 0 && id.data[i + 1] === 0 && id.data[i + 2] === 0) {
-          id.data[i + 3] = 0;
-        }
-      }
-      cx.putImageData(id, 0, 0);
-      onDone(cv.toDataURL("image/png"));
+      onDone(finalUrl);
     };
 
     img.onerror = () => onDone(makeBlueprintDataUrl(year, "load error"));
@@ -142,21 +125,33 @@ export default function SliderComparison({
   }, []);
 
   useEffect(() => {
+    let active = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset loading state to true synchronously when inputs change to display loading spinner
     setLoadingBefore(true);
     processImage(beforeImageUrl, beforeYear, isMask, src => {
-      setBeforeSrc(src);
-      setLoadingBefore(false);
+      if (active) {
+        setBeforeSrc(src);
+        setLoadingBefore(false);
+      }
     });
+    return () => {
+      active = false;
+    };
   }, [beforeImageUrl, beforeYear, isMask, processImage]);
 
   useEffect(() => {
+    let active = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset loading state to true synchronously when inputs change to display loading spinner
     setLoadingAfter(true);
     processImage(afterImageUrl, afterYear, isMask, src => {
-      setAfterSrc(src);
-      setLoadingAfter(false);
+      if (active) {
+        setAfterSrc(src);
+        setLoadingAfter(false);
+      }
     });
+    return () => {
+      active = false;
+    };
   }, [afterImageUrl, afterYear, isMask, processImage]);
 
   // ---- Drag logic ----
@@ -181,6 +176,9 @@ export default function SliderComparison({
   const onPointerUp = useCallback(() => { isDragging.current = false; }, []);
 
   const isLoading = loadingBefore || loadingAfter;
+
+  const isBeforeMask = isMask && beforeSrc ? !beforeSrc.startsWith("data:") : false;
+  const isAfterMask = isMask && afterSrc ? !afterSrc.startsWith("data:") : false;
 
   return (
     <div
@@ -208,13 +206,13 @@ export default function SliderComparison({
         )}
       </div>
 
-      {/* ---- Image comparison area ---- */}
       <div
         ref={containerRef}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerLeave={onPointerUp}
+        className="bg-grid"
         style={{
           flex: 1,
           position: "relative",
@@ -239,6 +237,7 @@ export default function SliderComparison({
                 opacity,
                 display: "block",
                 userSelect: "none",
+                mixBlendMode: isBeforeMask ? "screen" : "normal",
               }}
             />
             {/* Before year label */}
@@ -271,6 +270,7 @@ export default function SliderComparison({
                 opacity,
                 display: "block",
                 userSelect: "none",
+                mixBlendMode: isAfterMask ? "screen" : "normal",
               }}
             />
             {/* After year label */}

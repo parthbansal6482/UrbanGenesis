@@ -627,3 +627,33 @@ input[type="range"]::-moz-range-thumb {
 .leaflet-tile-pane {
   opacity: 0.92;
 }
+
+/* ============================================================
+   RADAR LOADING ANIMATION
+   ============================================================ */
+@keyframes radar-scan {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes radar-ping {
+  0% { transform: scale(0.6); opacity: 1; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+@keyframes radar-pulse-text {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.radar-scan-line {
+  animation: radar-scan 2s linear infinite;
+}
+
+.radar-ping-ring {
+  animation: radar-ping 2.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.radar-text-pulse {
+  animation: radar-pulse-text 2s ease-in-out infinite;
+}
