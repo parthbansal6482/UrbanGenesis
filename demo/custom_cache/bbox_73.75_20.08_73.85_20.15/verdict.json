@@ -5,10 +5,27 @@
   "grade": "A",
   "label": "Healthy Buffer",
   "description": "Cropland well-protected. Strong agricultural buffer intact. No MRV flags.",
-  "overall_abi_change_pct": -49.0,
-  "cropland_loss_ha": 876.4,
+  "overall_abi_change_pct": -63.8,
+  "cropland_loss_ha": 741.11,
   "encroachment_alert": true,
   "timeseries": [
+    {
+      "abi": 24.033,
+      "cropland_pixels": 737575,
+      "vegetation_pixels": 1273,
+      "water_pixels": 7642,
+      "buildings_pixels": 31061,
+      "soil_pixels": 44331,
+      "buffer_pixels": 746490,
+      "encroach_pixels": 31061,
+      "cropland_pct": 89.74,
+      "vegetation_pct": 0.15,
+      "water_pct": 0.93,
+      "buildings_pct": 3.78,
+      "soil_pct": 5.39,
+      "encroach_pct": 3.78,
+      "year": 2017
+    },
     {
       "abi": 17.0507,
       "cropland_pixels": 751104,
@@ -25,6 +42,23 @@
       "soil_pct": 2.67,
       "encroach_pct": 5.39,
       "year": 2019
+    },
+    {
+      "abi": 12.1124,
+      "cropland_pixels": 722079,
+      "vegetation_pixels": 485,
+      "water_pixels": 4991,
+      "buildings_pixels": 60067,
+      "soil_pixels": 34260,
+      "buffer_pixels": 727555,
+      "encroach_pixels": 60067,
+      "cropland_pct": 87.86,
+      "vegetation_pct": 0.06,
+      "water_pct": 0.61,
+      "buildings_pct": 7.31,
+      "soil_pct": 4.17,
+      "encroach_pct": 7.31,
+      "year": 2021
     },
     {
       "abi": 8.6982,
@@ -44,9 +78,9 @@
       "year": 2023
     }
   ],
-  "summary": "bbox_73.75_20.08_73.85_20.15 \u2014 ABI: 8.70 (-49.0% since 2019). Cropland lost: 876.4 ha. Grade: A \u2014 Healthy Buffer. \u26a0\ufe0f Encroachment Alert Active.",
+  "summary": "bbox_73.75_20.08_73.85_20.15 \u2014 ABI: 8.70 (-63.8% since 2017). Cropland lost: 741.1 ha. Grade: A \u2014 Healthy Buffer. \u26a0\ufe0f Encroachment Alert Active.",
   "encroachment": {
-    "total_cropland_lost_ha": 376.52,
-    "total_water_lost_ha": 0.01
+    "total_cropland_lost_ha": 480.39,
+    "total_water_lost_ha": 0.0
   }
 }

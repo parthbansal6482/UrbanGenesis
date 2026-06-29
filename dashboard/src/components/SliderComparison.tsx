@@ -287,14 +287,13 @@ export default function SliderComparison({
           </div>
         )}
 
-        {/* ---- Divider line ---- */}
         <div
           style={{
             position: "absolute",
             top: 0, bottom: 0,
             left: `${sliderValue}%`,
             width: 2,
-            background: "linear-gradient(to bottom, transparent, var(--emerald-400), transparent)",
+            background: "var(--emerald-500)",
             transform: "translateX(-50%)",
             zIndex: 10,
             pointerEvents: "none",

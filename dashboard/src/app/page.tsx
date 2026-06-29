@@ -161,12 +161,6 @@ function LineChart({
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
-      <defs>
-        <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#059669" stopOpacity="0.35" />
-          <stop offset="100%" stopColor="#059669" stopOpacity="0.0" />
-        </linearGradient>
-      </defs>
       {gridTicks.map(v => (
         <g key={v}>
           <line x1={margin.left} y1={gy(v)} x2={W - margin.right} y2={gy(v)}
@@ -177,7 +171,7 @@ function LineChart({
           </text>
         </g>
       ))}
-      <polygon points={areaPts} fill="url(#chartGrad)" />
+      <polygon points={areaPts} fill="rgba(16, 185, 129, 0.04)" />
       <polyline fill="none" stroke="#059669" strokeWidth={isExpanded ? "4" : "2"} strokeLinecap="round" strokeLinejoin="round" points={linePts} />
       {data.map(d => {
         const cx = gx(d.year), cy = gy(d.abi);
@@ -263,21 +257,6 @@ function EncroachmentChart({ data, isExpanded = false }: { data: TimeseriesRecor
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
-      <defs>
-        <linearGradient id="ecCropGrad"  x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stopColor="#f59e0b" stopOpacity="0.22" />
-          <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.02" />
-        </linearGradient>
-        <linearGradient id="ecBuiltGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stopColor="#f87171" stopOpacity="0.18" />
-          <stop offset="100%" stopColor="#f87171" stopOpacity="0.02" />
-        </linearGradient>
-        <linearGradient id="ecWaterGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stopColor="#38bdf8" stopOpacity="0.28" />
-          <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
-
       {/* ---- Grid lines + left axis labels ---- */}
       {Array.from({ length: tickCount }, (_, i) => {
         const v = Math.round(((i + 1) / tickCount) * maxScale);
@@ -299,9 +278,9 @@ function EncroachmentChart({ data, isExpanded = false }: { data: TimeseriesRecor
         stroke="rgba(51,90,130,0.25)" strokeWidth="1" />
 
       {/* ---- Area fills (back to front: crop → built → water) ---- */}
-      <polygon points={area(crops)}     fill="url(#ecCropGrad)"  />
-      <polygon points={area(buildings)} fill="url(#ecBuiltGrad)" />
-      <polygon points={area(water)}     fill="url(#ecWaterGrad)" />
+      <polygon points={area(crops)}     fill="rgba(245, 158, 11, 0.04)"  />
+      <polygon points={area(buildings)} fill="rgba(248, 113, 113, 0.03)" />
+      <polygon points={area(water)}     fill="rgba(56, 189, 248, 0.04)" />
 
       {/* ---- Polylines ---- */}
       <polyline fill="none" stroke="#f59e0b" strokeWidth={sw}
@@ -613,8 +592,7 @@ export default function Home() {
       }}
       className="bg-grid"
     >
-      {/* Scanning line */}
-      <div className="scan-line" />
+      {/* Scanning line removed */}
 
       {/* ==================================================
           HEADER
@@ -637,7 +615,6 @@ export default function Home() {
               background: "rgba(5,150,105,0.15)",
               border: "1px solid rgba(5,150,105,0.4)",
               display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "0 0 12px rgba(5,150,105,0.2)",
             }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2" strokeLinecap="round">
                 <path d="M12 2L2 7l10 5 10-5-10-5z" />
@@ -688,7 +665,7 @@ export default function Home() {
             </div>
           </div>
         </div>
-        <div className="header-glow-line" />
+        {/* Header glow line removed */}
       </header>
 
       {/* ==================================================
@@ -766,7 +743,6 @@ export default function Home() {
                   <div style={{
                     width: 12, height: 12, borderRadius: "50%",
                     background: "var(--emerald-400)",
-                    boxShadow: "0 0 16px var(--emerald-400)",
                     zIndex: 2,
                   }} />
                 </div>
@@ -1124,7 +1100,6 @@ export default function Home() {
                 <div className="glass-card" style={{
                   padding: "14px 16px",
                   borderColor: (analysis.metrics.grade === "F" || analysis.metrics.grade === "C") ? "rgba(220,38,38,0.3)" : "rgba(5,150,105,0.25)",
-                  boxShadow: (analysis.metrics.grade === "F" || analysis.metrics.grade === "C") ? "0 0 20px rgba(220,38,38,0.1)" : "0 0 20px rgba(5,150,105,0.08)",
                 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -1351,7 +1326,7 @@ export default function Home() {
                   border: "1px solid var(--border-dim)",
                   borderRadius: 16,
                   padding: "32px 36px",
-                  boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 30px rgba(5, 150, 105, 0.15)",
+                  boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.8)",
                   display: "flex",
                   flexDirection: "column",
                   gap: 16,

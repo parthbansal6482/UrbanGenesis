@@ -53,6 +53,7 @@ export default function LeafletMap({
 
   const [mapLoaded, setMapLoaded] = useState(false);
   const onDrawCompleteRef = useRef(onDrawComplete);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const drawRectangleRef = useRef<any>(null);
 
   useEffect(() => {
@@ -75,8 +76,10 @@ export default function LeafletMap({
       map.keyboard.disable();
 
       let isDrawing = false;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let startLatLng: any = null;
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const onMouseDown = (e: any) => {
         isDrawing = true;
         startLatLng = e.latlng;
@@ -91,6 +94,7 @@ export default function LeafletMap({
         }).addTo(map);
       };
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const onMouseMove = (e: any) => {
         if (!isDrawing || !startLatLng || !drawRectangleRef.current) return;
         drawRectangleRef.current.setBounds([startLatLng, e.latlng]);

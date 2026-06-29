@@ -560,18 +560,6 @@ export default function ThreeGlobe({ zones, selectedZoneKey, onSelectZone }: Thr
 
   return (
     <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
-      {/* Scanline overlay */}
-      <div className="scanlines" />
-
-      {/* Vignette */}
-      <div
-        className="absolute inset-0 pointer-events-none z-10"
-        style={{
-          background:
-            "radial-gradient(ellipse at center, transparent 50%, rgba(5,12,20,0.65) 100%)",
-        }}
-      />
-
       {/* WebGL canvas */}
       <div
         ref={containerRef}

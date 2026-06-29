@@ -8,50 +8,50 @@
 
 :root {
   /* Core Palette */
-  --bg-base: #050c14;
-  --bg-surface: #080f1a;
-  --bg-card: #0d1826;
-  --bg-card-hover: #111f30;
-  --bg-glass: rgba(13, 24, 38, 0.85);
+  --bg-base: #090a0f;
+  --bg-surface: #0f1016;
+  --bg-card: #15171f;
+  --bg-card-hover: #1c1e28;
+  --bg-glass: #15171f;
 
   /* Borders */
-  --border-dim: rgba(51, 90, 130, 0.25);
-  --border-bright: rgba(51, 90, 130, 0.55);
-  --border-active: rgba(5, 150, 105, 0.6);
+  --border-dim: rgba(255, 255, 255, 0.07);
+  --border-bright: rgba(255, 255, 255, 0.15);
+  --border-active: #10b981;
 
   /* Accent: Emerald (Primary — Stable) */
   --emerald-400: #34d399;
   --emerald-500: #10b981;
   --emerald-600: #059669;
-  --emerald-dim: rgba(5, 150, 105, 0.12);
-  --emerald-glow: 0 0 24px rgba(5, 150, 105, 0.25);
+  --emerald-dim: rgba(16, 185, 129, 0.08);
+  --emerald-glow: none;
 
   /* Accent: Red (Alert — Critical) */
   --red-400: #f87171;
   --red-500: #ef4444;
   --red-600: #dc2626;
-  --red-dim: rgba(220, 38, 38, 0.12);
-  --red-glow: 0 0 24px rgba(220, 38, 38, 0.35);
+  --red-dim: rgba(239, 68, 68, 0.08);
+  --red-glow: none;
 
   /* Accent: Amber (Warning) */
   --amber-400: #fbbf24;
   --amber-500: #f59e0b;
-  --amber-dim: rgba(245, 158, 11, 0.12);
+  --amber-dim: rgba(245, 158, 11, 0.08);
 
   /* Sky / Data lines */
   --sky-400: #38bdf8;
   --sky-500: #0ea5e9;
-  --sky-dim: rgba(14, 165, 233, 0.12);
-  --sky-glow: 0 0 20px rgba(14, 165, 233, 0.2);
+  --sky-dim: rgba(14, 165, 233, 0.08);
+  --sky-glow: none;
 
   /* Text */
-  --text-primary: #e2eaf5;
-  --text-secondary: #94a8c0;
-  --text-muted: #4d6580;
-  --text-label: #2d4460;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-label: #475569;
 
   /* Grid */
-  --grid-color: rgba(51, 90, 130, 0.12);
+  --grid-color: rgba(255, 255, 255, 0.03);
 }
 
 *,
@@ -110,16 +110,15 @@ body {
    GLASSMORPHISM CARD
    ============================================================ */
 .glass-card {
-  background: var(--bg-glass);
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  background: var(--bg-card);
   border: 1px solid var(--border-dim);
   border-radius: 12px;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
 .glass-card:hover {
   border-color: var(--border-bright);
-  background: rgba(13, 24, 38, 0.92);
+  background: var(--bg-card-hover);
 }
 
 /* ============================================================
@@ -130,7 +129,7 @@ body {
   border: 1px solid var(--border-dim);
   border-radius: 10px;
   padding: 14px 16px;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color 0.2s ease;
 }
 
 .metric-card:hover {
@@ -138,13 +137,11 @@ body {
 }
 
 .metric-card.alert {
-  border-color: rgba(220, 38, 38, 0.3);
-  box-shadow: var(--red-glow);
+  border-color: var(--red-600);
 }
 
 .metric-card.stable {
-  border-color: rgba(5, 150, 105, 0.3);
-  box-shadow: var(--emerald-glow);
+  border-color: var(--emerald-600);
 }
 
 /* ============================================================
@@ -247,23 +244,9 @@ body {
   50% { box-shadow: 0 0 0 5px rgba(245, 158, 11, 0); }
 }
 
-/* ============================================================
-   SCANNING LINE ANIMATION (for 3D section)
-   ============================================================ */
-@keyframes scan-line {
-  0% { transform: translateY(-100%); opacity: 0.6; }
-  100% { transform: translateY(100vh); opacity: 0; }
-}
-
+/* Scanning line removed */
 .scan-line {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(5, 150, 105, 0.6), transparent);
-  animation: scan-line 4s ease-in-out infinite;
-  pointer-events: none;
-  z-index: 5;
+  display: none;
 }
 
 /* ============================================================
@@ -454,22 +437,16 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* ============================================================
-   SKELETON LOADER
+   SKELETON LOADER (Minimal pulse)
    ============================================================ */
-@keyframes shimmer {
-  0%   { background-position: -600px 0; }
-  100% { background-position:  600px 0; }
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.85; }
 }
 
 .skeleton {
-  background: linear-gradient(
-    90deg,
-    var(--bg-card)          25%,
-    rgba(51, 90, 130, 0.13) 50%,
-    var(--bg-card)          75%
-  );
-  background-size: 600px 100%;
-  animation: shimmer 1.6s ease-in-out infinite;
+  background: var(--bg-card-hover);
+  animation: skeleton-pulse 1.8s ease-in-out infinite;
   border-radius: 6px;
 }
 
@@ -485,7 +462,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .chart-area {
-  fill: url(#chartGrad);
+  fill: var(--emerald-dim);
 }
 
 /* ============================================================
@@ -534,21 +511,9 @@ input[type="range"]::-moz-range-thumb {
   border-color: rgba(5, 150, 105, 0.35);
 }
 
-/* ============================================================
-   SCANLINES OVERLAY
-   ============================================================ */
+/* Scanlines overlay removed */
 .scanlines {
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0, 0, 0, 0.04) 2px,
-    rgba(0, 0, 0, 0.04) 4px
-  );
-  pointer-events: none;
-  z-index: 2;
+  display: none;
 }
 
 /* ============================================================
@@ -563,18 +528,9 @@ input[type="range"]::-moz-range-thumb {
   animation: fade-in 0.4s ease forwards;
 }
 
-/* ============================================================
-   HEADER GLOW LINE
-   ============================================================ */
+/* Header glow line removed */
 .header-glow-line {
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(5, 150, 105, 0.5) 30%,
-    rgba(5, 150, 105, 0.5) 70%,
-    transparent
-  );
+  display: none;
 }
 
 /* ============================================================

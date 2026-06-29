@@ -356,17 +356,6 @@ export default function ThreeMapProjection({
         display: "flex", alignItems: "center", justifyContent: "center",
       }}
     >
-      {/* Scanlines */}
-      <div className="scanlines" />
-
-      {/* Vignette */}
-      <div
-        style={{
-          position: "absolute", inset: 0, pointerEvents: "none", zIndex: 10,
-          background: "radial-gradient(ellipse at center, transparent 50%, rgba(5,12,20,0.7) 100%)",
-        }}
-      />
-
       {/* Overlay labels */}
       <div
         style={{
