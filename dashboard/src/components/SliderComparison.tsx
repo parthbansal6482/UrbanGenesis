@@ -26,12 +26,12 @@ function makeBlueprintDataUrl(year: number, label: string): string {
   canvas.height = 512;
   const ctx = canvas.getContext("2d")!;
 
-  // Deep dark base
-  ctx.fillStyle = "#050c14";
+  // Off-white base
+  ctx.fillStyle = "#fafaf9";
   ctx.fillRect(0, 0, 512, 512);
 
   // Grid
-  ctx.strokeStyle = "rgba(5,150,105,0.1)";
+  ctx.strokeStyle = "rgba(15, 23, 42, 0.05)";
   ctx.lineWidth = 0.8;
   for (let i = 0; i <= 512; i += 24) {
     ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke();
@@ -39,27 +39,27 @@ function makeBlueprintDataUrl(year: number, label: string): string {
   }
 
   // Header band
-  ctx.fillStyle = "rgba(5,150,105,0.1)";
+  ctx.fillStyle = "rgba(5, 150, 105, 0.06)";
   ctx.fillRect(0, 0, 512, 68);
 
-  ctx.fillStyle = "#34d399";
+  ctx.fillStyle = "#059669";
   ctx.font = "bold 12px monospace";
   ctx.textAlign = "center";
   ctx.fillText("SAT4RISK // FARMGUARD SURVEILLANCE", 256, 26);
 
-  ctx.fillStyle = "rgba(52,211,153,0.55)";
+  ctx.fillStyle = "#475569";
   ctx.font = "9.5px monospace";
   ctx.fillText(`PERIOD: ${year}  ·  SENTINEL-2 L2A`, 256, 48);
 
   // Alert text
-  ctx.fillStyle = "rgba(239,68,68,0.85)";
+  ctx.fillStyle = "#dc2626";
   ctx.font = "bold 10.5px monospace";
   ctx.textAlign = "left";
   ctx.fillText(`// SATELLITE RASTER ABSENT FOR ${year}`, 28, 108);
   ctx.fillText(`// MODE: ${label.toUpperCase()}`, 28, 128);
 
   // Crosshair
-  ctx.strokeStyle = "rgba(5,150,105,0.45)";
+  ctx.strokeStyle = "rgba(5, 150, 105, 0.3)";
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.arc(256, 310, 56, 0, Math.PI * 2);
@@ -70,7 +70,7 @@ function makeBlueprintDataUrl(year: number, label: string): string {
   ctx.stroke();
 
   // Bottom label
-  ctx.fillStyle = "rgba(52,211,153,0.65)";
+  ctx.fillStyle = "#475569";
   ctx.font = "8px monospace";
   ctx.textAlign = "center";
   ctx.fillText("TARGET BOUNDS GRID ACTIVE · AWAITING RASTER INPUT", 256, 390);
@@ -97,18 +97,22 @@ export default function SliderComparison({
   const [afterSrc, setAfterSrc] = useState<string | null>(null);
   const [loadingBefore, setLoadingBefore] = useState(true);
   const [loadingAfter, setLoadingAfter] = useState(true);
+  // Natural aspect ratio of the loaded raster — drives canvas width
+  const [imgAspectRatio, setImgAspectRatio] = useState<number | null>(null);
 
   // ---- Load / process images ----
   const processImage = useCallback((
     url: string | null,
     year: number,
     maskMode: boolean,
+    captureAspect: boolean,
     onDone: (src: string) => void
   ) => {
     const fallbackLabel = maskMode ? "AI classification" : "satellite band";
 
     if (!url) {
-      // Generate fallback in next tick so we're in browser context
+      // Fallback canvas is always 512×512 — ratio 1:1
+      if (captureAspect) setImgAspectRatio(1);
       setTimeout(() => onDone(makeBlueprintDataUrl(year, fallbackLabel)), 0);
       return;
     }
@@ -117,10 +121,17 @@ export default function SliderComparison({
     const img = new Image();
 
     img.onload = () => {
+      // Capture natural dimensions from the before image so canvas fits exactly
+      if (captureAspect && img.naturalWidth && img.naturalHeight) {
+        setImgAspectRatio(img.naturalWidth / img.naturalHeight);
+      }
       onDone(finalUrl);
     };
 
-    img.onerror = () => onDone(makeBlueprintDataUrl(year, "load error"));
+    img.onerror = () => {
+      if (captureAspect) setImgAspectRatio(1);
+      onDone(makeBlueprintDataUrl(year, "load error"));
+    };
     img.src = finalUrl;
   }, []);
 
@@ -128,7 +139,9 @@ export default function SliderComparison({
     let active = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset loading state to true synchronously when inputs change to display loading spinner
     setLoadingBefore(true);
-    processImage(beforeImageUrl, beforeYear, isMask, src => {
+    // Reset ratio on source change so old ratio doesn't flash
+    setImgAspectRatio(null);
+    processImage(beforeImageUrl, beforeYear, isMask, true, src => {
       if (active) {
         setBeforeSrc(src);
         setLoadingBefore(false);
@@ -143,7 +156,7 @@ export default function SliderComparison({
     let active = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset loading state to true synchronously when inputs change to display loading spinner
     setLoadingAfter(true);
-    processImage(afterImageUrl, afterYear, isMask, src => {
+    processImage(afterImageUrl, afterYear, isMask, false, src => {
       if (active) {
         setAfterSrc(src);
         setLoadingAfter(false);
@@ -185,26 +198,21 @@ export default function SliderComparison({
       style={{
         position: "relative", width: "100%", height: "100%",
         background: "var(--bg-base)", overflow: "hidden",
-        display: "flex", flexDirection: "column",
+        display: "flex", flexDirection: "column", alignItems: "center",
       }}
     >
-      {/* ---- Top HUD ---- */}
-      <div style={{
-        position: "absolute", top: 12, left: 12, right: 12,
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        zIndex: 20, pointerEvents: "none",
-      }}>
-        <div className="glass-card" style={{ padding: "5px 12px", display: "flex", alignItems: "center", gap: 6 }}>
-          <span className="dot-pulse sky" style={{ background: "var(--sky-500)" }} />
-          <span className="section-label" style={{ color: "var(--sky-400)" }}>Before / After Comparison</span>
-        </div>
-        {isLoading && (
+      {/* ---- Loading indicator only — tab bar already labels this view ---- */}
+      {isLoading && (
+        <div style={{
+          position: "absolute", top: 12, right: 12,
+          zIndex: 20, pointerEvents: "none",
+        }}>
           <div className="glass-card" style={{ padding: "5px 12px", display: "flex", alignItems: "center", gap: 6 }}>
             <div className="spinner" style={{ width: 12, height: 12 }} />
-            <span className="section-label" style={{ color: "var(--emerald-400)" }}>Loading raster…</span>
+            <span className="section-label" style={{ color: "var(--emerald-500)" }}>Loading raster…</span>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       <div
         ref={containerRef}
@@ -219,6 +227,10 @@ export default function SliderComparison({
           overflow: "hidden",
           cursor: showSlider ? "ew-resize" : "default",
           userSelect: "none",
+          // Shrink width to match the image's natural aspect ratio — no side gaps
+          ...(imgAspectRatio
+            ? { width: "auto", aspectRatio: String(imgAspectRatio), maxWidth: "100%" }
+            : { width: "100%" }),
         }}
       >
         {showSlider ? (
@@ -235,24 +247,13 @@ export default function SliderComparison({
                   draggable={false}
                   style={{
                     width: "100%", height: "100%",
-                    objectFit: "contain",
+                    objectFit: "fill",
                     opacity,
                     display: "block",
                     userSelect: "none",
                     mixBlendMode: isBeforeMask ? "screen" : "normal",
                   }}
                 />
-                {/* Before year label */}
-                <div
-                  style={{
-                    position: "absolute", top: 52, left: 14,
-                    pointerEvents: "none",
-                  }}
-                >
-                  <span className="badge-neutral" style={{ fontSize: 10, padding: "4px 10px" }}>
-                    {beforeYear}
-                  </span>
-                </div>
               </div>
             )}
 
@@ -268,26 +269,41 @@ export default function SliderComparison({
                   draggable={false}
                   style={{
                     width: "100%", height: "100%",
-                    objectFit: "contain",
+                    objectFit: "fill",
                     opacity,
                     display: "block",
                     userSelect: "none",
                     mixBlendMode: isAfterMask ? "screen" : "normal",
                   }}
                 />
-                {/* After year label */}
-                <div
-                  style={{
-                    position: "absolute", top: 52, right: 14,
-                    pointerEvents: "none",
-                  }}
-                >
-                  <span className="badge-neutral" style={{ fontSize: 10, padding: "4px 10px" }}>
-                    {afterYear}
-                  </span>
-                </div>
               </div>
             )}
+
+            {/* ---- Year labels: outside clip containers so they're never cut off ---- */}
+            <div style={{
+              position: "absolute", top: 12, left: 14,
+              pointerEvents: "none", zIndex: 12,
+            }}>
+              <span className="glass-card" style={{
+                display: "inline-block",
+                fontSize: 10, fontFamily: "monospace", fontWeight: 700,
+                padding: "3px 10px", borderRadius: 6,
+                color: "var(--text-primary)",
+                letterSpacing: "0.06em",
+              }}>{beforeYear}</span>
+            </div>
+            <div style={{
+              position: "absolute", top: 12, right: 14,
+              pointerEvents: "none", zIndex: 12,
+            }}>
+              <span className="glass-card" style={{
+                display: "inline-block",
+                fontSize: 10, fontFamily: "monospace", fontWeight: 700,
+                padding: "3px 10px", borderRadius: 6,
+                color: "var(--text-primary)",
+                letterSpacing: "0.06em",
+              }}>{afterYear}</span>
+            </div>
 
             <div
               style={{
@@ -321,29 +337,33 @@ export default function SliderComparison({
               }}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M5 4L2 8l3 4M11 4l3 4-3 4" stroke="#34d399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M5 4L2 8l3 4M11 4l3 4-3 4" stroke="#059669" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
 
-            {/* ---- Before/After edge labels at bottom ---- */}
+            {/* ---- Before/After direction labels at bottom ---- */}
             <div style={{
-              position: "absolute", bottom: 52, left: 14,
+              position: "absolute", bottom: 14, left: 14,
               pointerEvents: "none", zIndex: 12,
             }}>
-              <span style={{
+              <span className="glass-card" style={{
+                display: "inline-block",
                 fontSize: 9, fontFamily: "monospace", fontWeight: 700,
                 letterSpacing: "0.08em", textTransform: "uppercase",
-                color: "var(--text-muted)",
+                padding: "3px 8px", borderRadius: 5,
+                color: "var(--text-secondary)",
               }}>← Before</span>
             </div>
             <div style={{
-              position: "absolute", bottom: 52, right: 14,
+              position: "absolute", bottom: 14, right: 14,
               pointerEvents: "none", zIndex: 12,
             }}>
-              <span style={{
+              <span className="glass-card" style={{
+                display: "inline-block",
                 fontSize: 9, fontFamily: "monospace", fontWeight: 700,
                 letterSpacing: "0.08em", textTransform: "uppercase",
-                color: "var(--text-muted)",
+                padding: "3px 8px", borderRadius: 5,
+                color: "var(--text-secondary)",
               }}>After →</span>
             </div>
           </>
@@ -357,7 +377,7 @@ export default function SliderComparison({
                 draggable={false}
                 style={{
                   width: "100%", height: "100%",
-                  objectFit: "contain",
+                  objectFit: "fill",
                   opacity,
                   display: "block",
                   userSelect: "none",
@@ -378,42 +398,7 @@ export default function SliderComparison({
         )}
       </div>
 
-      {/* ---- Slider track at bottom ---- */}
-      {showSlider && (
-        <div
-          style={{
-            flexShrink: 0,
-            padding: "10px 16px",
-            background: "rgba(5,12,20,0.95)",
-            borderTop: "1px solid var(--border-dim)",
-            display: "flex", alignItems: "center", gap: 12,
-          }}
-        >
-          <span style={{ fontSize: 9, fontFamily: "monospace", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", flexShrink: 0 }}>
-            {beforeYear}
-          </span>
-          <input
-            type="range"
-            min="0" max="100"
-            value={sliderValue}
-            onChange={e => onSliderChange(Number(e.target.value))}
-            style={{ flex: 1 }}
-          />
-          <span style={{ fontSize: 9, fontFamily: "monospace", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", flexShrink: 0 }}>
-            {afterYear}
-          </span>
-          <span style={{
-            fontSize: 10, fontFamily: "monospace", fontWeight: 700,
-            color: "var(--emerald-400)",
-            background: "var(--emerald-dim)",
-            border: "1px solid rgba(5,150,105,0.25)",
-            borderRadius: 4, padding: "2px 8px", flexShrink: 0,
-            minWidth: 40, textAlign: "center",
-          }}>
-            {Math.round(sliderValue)}%
-          </span>
-        </div>
-      )}
+
     </div>
   );
 }

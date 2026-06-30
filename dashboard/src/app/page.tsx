@@ -164,9 +164,9 @@ function LineChart({
       {gridTicks.map(v => (
         <g key={v}>
           <line x1={margin.left} y1={gy(v)} x2={W - margin.right} y2={gy(v)}
-            stroke="rgba(51,90,130,0.25)" strokeWidth={isExpanded ? "2" : "1"} strokeDasharray="3 5" />
+            stroke="rgba(28,25,23,0.08)" strokeWidth={isExpanded ? "2" : "1"} strokeDasharray="3 5" />
           <text x={margin.left - 8} y={gy(v) + 4} textAnchor="end"
-            fill="rgba(148,163,184,0.8)" fontSize={isExpanded ? "12" : "8"} fontFamily="monospace" fontWeight="600">
+            fill="#78716c" fontSize={isExpanded ? "12" : "8"} fontFamily="monospace" fontWeight="600">
             {v >= 1 ? v.toFixed(1) : v.toFixed(2)}
           </text>
         </g>
@@ -178,12 +178,12 @@ function LineChart({
         const sel = d.year === beforeYear || d.year === afterYear;
         return (
           <g key={d.year}>
-            <text x={cx} y={H - (isExpanded ? 12 : 8)} textAnchor="middle" fill="rgba(148,163,184,0.8)"
+            <text x={cx} y={H - (isExpanded ? 12 : 8)} textAnchor="middle" fill="#78716c"
               fontSize={isExpanded ? "13" : "9"} fontFamily="monospace" fontWeight="700">{d.year}</text>
             <circle cx={cx} cy={cy} r={sel ? (isExpanded ? 7 : 5) : (isExpanded ? 5 : 3.5)}
-              fill={sel ? "#059669" : "#050c14"} stroke={sel ? "#34d399" : "#059669"} strokeWidth={sel ? (isExpanded ? 3 : 2) : 1.5} />
+              fill={sel ? "#059669" : "#fafaf9"} stroke={sel ? "#047857" : "#059669"} strokeWidth={sel ? (isExpanded ? 3 : 2) : 1.5} />
             {sel && (
-              <text x={cx} y={cy - (isExpanded ? 13 : 9)} textAnchor="middle" fill="#34d399"
+              <text x={cx} y={cy - (isExpanded ? 13 : 9)} textAnchor="middle" fill="#047857"
                 fontSize={isExpanded ? "12" : "8"} fontFamily="monospace" fontWeight="700">{d.abi.toFixed(2)}</text>
             )}
           </g>
@@ -264,9 +264,9 @@ function EncroachmentChart({ data, isExpanded = false }: { data: TimeseriesRecor
         return (
           <g key={`g-${i}`}>
             <line x1={margin.left} y1={y} x2={W - margin.right} y2={y}
-              stroke="rgba(51,90,130,0.13)" strokeWidth="0.8" strokeDasharray="3 5" />
+              stroke="rgba(28,25,23,0.08)" strokeWidth="0.8" strokeDasharray="3 5" />
             <text x={margin.left - 6} y={y + 3.5} textAnchor="end"
-              fill="rgba(148,163,184,0.65)" fontSize={fs2} fontFamily="monospace" fontWeight="600">
+              fill="#78716c" fontSize={fs2} fontFamily="monospace" fontWeight="600">
               {fmt(v)}
             </text>
           </g>
@@ -275,7 +275,7 @@ function EncroachmentChart({ data, isExpanded = false }: { data: TimeseriesRecor
 
       {/* ---- Y-axis rule ---- */}
       <line x1={margin.left} y1={margin.top} x2={margin.left} y2={yBase}
-        stroke="rgba(51,90,130,0.25)" strokeWidth="1" />
+        stroke="rgba(28,25,23,0.12)" strokeWidth="1" />
 
       {/* ---- Area fills (back to front: crop → built → water) ---- */}
       <polygon points={area(crops)}     fill="rgba(245, 158, 11, 0.04)"  />
@@ -666,7 +666,7 @@ export default function Home() {
       ================================================== */}
       <header style={{
         flexShrink: 0,
-        background: "rgba(5,12,20,0.97)",
+        background: "rgba(250, 250, 249, 0.9)",
         borderBottom: "1px solid var(--border-dim)",
         backdropFilter: "blur(8px)",
         zIndex: 30,
@@ -683,7 +683,7 @@ export default function Home() {
               border: "1px solid rgba(5,150,105,0.4)",
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2" strokeLinecap="round">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round">
                 <path d="M12 2L2 7l10 5 10-5-10-5z" />
                 <path d="M2 17l10 5 10-5" />
                 <path d="M2 12l10 5 10-5" />
@@ -757,7 +757,7 @@ export default function Home() {
           <div style={{
             position: "absolute", top: 12, left: 12, zIndex: 20,
             display: "flex",
-            background: "rgba(5,12,20,0.92)",
+            background: "rgba(250, 250, 249, 0.92)",
             backdropFilter: "blur(10px)",
             border: "1px solid var(--border-dim)",
             borderRadius: 8, padding: 3, gap: 2,
@@ -784,11 +784,11 @@ export default function Home() {
               <div style={{
                 position: "absolute",
                 top: 0, left: 0, right: 0, bottom: 0,
-                background: "rgba(5, 12, 20, 0.95)",
+                background: "rgba(250, 250, 249, 0.97)",
                 display: "flex", flexDirection: "column",
                 alignItems: "center", justifyContent: "center",
                 gap: 24, zIndex: 100,
-                border: "1px dashed rgba(5, 150, 105, 0.2)",
+                border: "1px dashed rgba(5, 150, 105, 0.15)",
                 borderRadius: 8
               }}>
                 <div style={{ position: "relative", width: 100, height: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -796,15 +796,15 @@ export default function Home() {
                   <div className="radar-scan-line" style={{
                     position: "absolute",
                     width: 100, height: 100, borderRadius: "50%",
-                    border: "2px solid rgba(5, 150, 105, 0.15)",
+                    border: "2px solid rgba(5, 150, 105, 0.1)",
                     borderTopColor: "var(--emerald-400)",
                   }} />
                   {/* Inner ping ring */}
                   <div className="radar-ping-ring" style={{
                     position: "absolute",
                     width: 70, height: 70, borderRadius: "50%",
-                    background: "rgba(5, 150, 105, 0.05)",
-                    border: "1px dashed rgba(5, 150, 105, 0.3)",
+                    background: "rgba(5, 150, 105, 0.03)",
+                    border: "1px dashed rgba(5, 150, 105, 0.2)",
                   }} />
                   {/* Center glowing green dot representing the satellite pin */}
                   <div style={{
@@ -887,7 +887,7 @@ export default function Home() {
             <div style={{
               display: "grid",
               gridTemplateColumns: "1fr 1fr 1fr",
-              background: "rgba(5,12,20,0.6)",
+              background: "rgba(15, 23, 42, 0.05)",
               border: "1px solid var(--border-dim)",
               borderRadius: 8,
               padding: 3,
@@ -925,8 +925,8 @@ export default function Home() {
                   Target Buffer Zone
                 </label>
                 {zonesError ? (
-                  <div className="glass-card" style={{ padding: "8px 12px", border: "1px solid rgba(220, 38, 38, 0.35)", background: "rgba(220, 38, 38, 0.1)", borderRadius: 8, marginBottom: 8 }}>
-                    <p style={{ color: "var(--red-400)", fontSize: 11, margin: 0, fontFamily: "monospace" }}>
+                  <div className="glass-card" style={{ padding: "8px 12px", border: "1px solid rgba(220, 38, 38, 0.25)", background: "var(--red-dim)", borderRadius: 8, marginBottom: 8 }}>
+                    <p style={{ color: "var(--red-500)", fontSize: 11, margin: 0, fontFamily: "monospace" }}>
                       ⚠️ Error: {zonesError}
                     </p>
                   </div>
@@ -1047,7 +1047,7 @@ export default function Home() {
                       placeholder="e.g. 73.75"
                       value={coordsInput.minLon}
                       onChange={e => handleCoordChange("minLon", e.target.value)}
-                      style={{ width: "100%", padding: "6px 10px", background: "rgba(5,12,20,0.5)", border: "1px solid var(--border-dim)", borderRadius: 6, color: "var(--text-primary)", fontSize: 12 }}
+                      style={{ width: "100%", padding: "6px 10px", background: "var(--bg-base)", border: "1px solid var(--border-dim)", borderRadius: 6, color: "var(--text-primary)", fontSize: 12 }}
                     />
                   </div>
                   <div>
@@ -1058,7 +1058,7 @@ export default function Home() {
                       placeholder="e.g. 20.08"
                       value={coordsInput.minLat}
                       onChange={e => handleCoordChange("minLat", e.target.value)}
-                      style={{ width: "100%", padding: "6px 10px", background: "rgba(5,12,20,0.5)", border: "1px solid var(--border-dim)", borderRadius: 6, color: "var(--text-primary)", fontSize: 12 }}
+                      style={{ width: "100%", padding: "6px 10px", background: "var(--bg-base)", border: "1px solid var(--border-dim)", borderRadius: 6, color: "var(--text-primary)", fontSize: 12 }}
                     />
                   </div>
                   <div>
@@ -1069,7 +1069,7 @@ export default function Home() {
                       placeholder="e.g. 73.85"
                       value={coordsInput.maxLon}
                       onChange={e => handleCoordChange("maxLon", e.target.value)}
-                      style={{ width: "100%", padding: "6px 10px", background: "rgba(5,12,20,0.5)", border: "1px solid var(--border-dim)", borderRadius: 6, color: "var(--text-primary)", fontSize: 12 }}
+                      style={{ width: "100%", padding: "6px 10px", background: "var(--bg-base)", border: "1px solid var(--border-dim)", borderRadius: 6, color: "var(--text-primary)", fontSize: 12 }}
                     />
                   </div>
                   <div>
@@ -1080,7 +1080,7 @@ export default function Home() {
                       placeholder="e.g. 20.15"
                       value={coordsInput.maxLat}
                       onChange={e => handleCoordChange("maxLat", e.target.value)}
-                      style={{ width: "100%", padding: "6px 10px", background: "rgba(5,12,20,0.5)", border: "1px solid var(--border-dim)", borderRadius: 6, color: "var(--text-primary)", fontSize: 12 }}
+                      style={{ width: "100%", padding: "6px 10px", background: "var(--bg-base)", border: "1px solid var(--border-dim)", borderRadius: 6, color: "var(--text-primary)", fontSize: 12 }}
                     />
                   </div>
                 </div>
@@ -1422,7 +1422,7 @@ export default function Home() {
               style={{
                 position: "fixed",
                 inset: 0,
-                background: "rgba(3, 8, 14, 0.88)",
+                background: "rgba(15, 23, 42, 0.4)",
                 backdropFilter: "blur(12px)",
                 zIndex: 999,
                 cursor: "pointer",
@@ -1451,7 +1451,7 @@ export default function Home() {
                   border: "1px solid var(--border-dim)",
                   borderRadius: 16,
                   padding: "32px 36px",
-                  boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.8)",
+                  boxShadow: "0 20px 40px -15px rgba(15, 23, 42, 0.15), 0 0 0 1px rgba(15, 23, 42, 0.05)",
                   display: "flex",
                   flexDirection: "column",
                   gap: 16,
@@ -1465,7 +1465,7 @@ export default function Home() {
                   <button
                     onClick={() => setExpandedChart(null)}
                     style={{
-                      background: "rgba(255,255,255,0.05)",
+                      background: "rgba(15, 23, 42, 0.05)",
                       border: "1px solid var(--border-dim)",
                       color: "var(--text-secondary)",
                       borderRadius: "50%",
