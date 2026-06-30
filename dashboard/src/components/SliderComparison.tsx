@@ -14,6 +14,7 @@ interface SliderComparisonProps {
   isMask: boolean;
   sliderValue: number;          // 0–100: position of divider (% from left)
   onSliderChange: (v: number) => void;
+  showSlider?: boolean;
 }
 
 // ============================================================
@@ -77,9 +78,8 @@ function makeBlueprintDataUrl(year: number, label: string): string {
   return canvas.toDataURL("image/png");
 }
 
-// ============================================================
-// COMPONENT
-// ============================================================
+const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 export default function SliderComparison({
   beforeImageUrl,
   afterImageUrl,
@@ -89,6 +89,7 @@ export default function SliderComparison({
   isMask,
   sliderValue,
   onSliderChange,
+  showSlider = true,
 }: SliderComparisonProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
@@ -112,9 +113,8 @@ export default function SliderComparison({
       return;
     }
 
-    const finalUrl = url.startsWith("http") ? url : `http://localhost:8000${url}`;
+    const finalUrl = url.startsWith("http") ? url : `${API_ORIGIN}${url}`;
     const img = new Image();
-    img.crossOrigin = "anonymous";
 
     img.onload = () => {
       onDone(finalUrl);
@@ -208,178 +208,212 @@ export default function SliderComparison({
 
       <div
         ref={containerRef}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
+        onPointerDown={showSlider ? onPointerDown : undefined}
+        onPointerMove={showSlider ? onPointerMove : undefined}
+        onPointerUp={showSlider ? onPointerUp : undefined}
+        onPointerLeave={showSlider ? onPointerUp : undefined}
         className="bg-grid"
         style={{
           flex: 1,
           position: "relative",
           overflow: "hidden",
-          cursor: "ew-resize",
+          cursor: showSlider ? "ew-resize" : "default",
           userSelect: "none",
         }}
       >
-        {/* BEFORE image — full width, clipped on the right */}
-        {beforeSrc && (
-          <div style={{
-            position: "absolute", inset: 0,
-            clipPath: `inset(0 ${100 - sliderValue}% 0 0)`,
-          }}>
-            <img
-              src={beforeSrc}
-              alt={`Before ${beforeYear}`}
-              draggable={false}
-              style={{
-                width: "100%", height: "100%",
-                objectFit: "contain",
-                opacity,
-                display: "block",
-                userSelect: "none",
-                mixBlendMode: isBeforeMask ? "screen" : "normal",
-              }}
-            />
-            {/* Before year label */}
+        {showSlider ? (
+          <>
+            {/* BEFORE image — full width, clipped on the right */}
+            {beforeSrc && (
+              <div style={{
+                position: "absolute", inset: 0,
+                clipPath: `inset(0 ${100 - sliderValue}% 0 0)`,
+              }}>
+                <img
+                  src={beforeSrc}
+                  alt={`Before ${beforeYear}`}
+                  draggable={false}
+                  style={{
+                    width: "100%", height: "100%",
+                    objectFit: "contain",
+                    opacity,
+                    display: "block",
+                    userSelect: "none",
+                    mixBlendMode: isBeforeMask ? "screen" : "normal",
+                  }}
+                />
+                {/* Before year label */}
+                <div
+                  style={{
+                    position: "absolute", top: 52, left: 14,
+                    pointerEvents: "none",
+                  }}
+                >
+                  <span className="badge-neutral" style={{ fontSize: 10, padding: "4px 10px" }}>
+                    {beforeYear}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* AFTER image — full width, clipped on the left */}
+            {afterSrc && (
+              <div style={{
+                position: "absolute", inset: 0,
+                clipPath: `inset(0 0 0 ${sliderValue}%)`,
+              }}>
+                <img
+                  src={afterSrc}
+                  alt={`After ${afterYear}`}
+                  draggable={false}
+                  style={{
+                    width: "100%", height: "100%",
+                    objectFit: "contain",
+                    opacity,
+                    display: "block",
+                    userSelect: "none",
+                    mixBlendMode: isAfterMask ? "screen" : "normal",
+                  }}
+                />
+                {/* After year label */}
+                <div
+                  style={{
+                    position: "absolute", top: 52, right: 14,
+                    pointerEvents: "none",
+                  }}
+                >
+                  <span className="badge-neutral" style={{ fontSize: 10, padding: "4px 10px" }}>
+                    {afterYear}
+                  </span>
+                </div>
+              </div>
+            )}
+
             <div
               style={{
-                position: "absolute", top: 52, left: 14,
+                position: "absolute",
+                top: 0, bottom: 0,
+                left: `${sliderValue}%`,
+                width: 2,
+                background: "var(--emerald-500)",
+                transform: "translateX(-50%)",
+                zIndex: 10,
+                pointerEvents: "none",
+              }}
+            />
+
+            {/* ---- Drag handle ---- */}
+            <div
+              style={{
+                position: "absolute",
+                top: "50%",
+                left: `${sliderValue}%`,
+                transform: "translate(-50%, -50%)",
+                zIndex: 15,
+                width: 36, height: 36,
+                borderRadius: "50%",
+                background: "var(--bg-base)",
+                border: "2px solid var(--emerald-500)",
+                boxShadow: "0 0 16px rgba(5,150,105,0.5)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: "ew-resize",
                 pointerEvents: "none",
               }}
             >
-              <span className="badge-neutral" style={{ fontSize: 10, padding: "4px 10px" }}>
-                {beforeYear}
-              </span>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M5 4L2 8l3 4M11 4l3 4-3 4" stroke="#34d399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </div>
-          </div>
-        )}
 
-        {/* AFTER image — full width, clipped on the left */}
-        {afterSrc && (
-          <div style={{
-            position: "absolute", inset: 0,
-            clipPath: `inset(0 0 0 ${sliderValue}%)`,
-          }}>
-            <img
-              src={afterSrc}
-              alt={`After ${afterYear}`}
-              draggable={false}
-              style={{
-                width: "100%", height: "100%",
-                objectFit: "contain",
-                opacity,
-                display: "block",
-                userSelect: "none",
-                mixBlendMode: isAfterMask ? "screen" : "normal",
-              }}
-            />
-            {/* After year label */}
-            <div
-              style={{
-                position: "absolute", top: 52, right: 14,
-                pointerEvents: "none",
-              }}
-            >
-              <span className="badge-neutral" style={{ fontSize: 10, padding: "4px 10px" }}>
-                {afterYear}
-              </span>
+            {/* ---- Before/After edge labels at bottom ---- */}
+            <div style={{
+              position: "absolute", bottom: 52, left: 14,
+              pointerEvents: "none", zIndex: 12,
+            }}>
+              <span style={{
+                fontSize: 9, fontFamily: "monospace", fontWeight: 700,
+                letterSpacing: "0.08em", textTransform: "uppercase",
+                color: "var(--text-muted)",
+              }}>← Before</span>
             </div>
-          </div>
+            <div style={{
+              position: "absolute", bottom: 52, right: 14,
+              pointerEvents: "none", zIndex: 12,
+            }}>
+              <span style={{
+                fontSize: 9, fontFamily: "monospace", fontWeight: 700,
+                letterSpacing: "0.08em", textTransform: "uppercase",
+                color: "var(--text-muted)",
+              }}>After →</span>
+            </div>
+          </>
+        ) : (
+          /* Single full-width Encroachment Heatmap overlay view */
+          afterSrc && (
+            <div style={{ position: "absolute", inset: 0 }}>
+              <img
+                src={afterSrc}
+                alt="Encroachment Heatmap"
+                draggable={false}
+                style={{
+                  width: "100%", height: "100%",
+                  objectFit: "contain",
+                  opacity,
+                  display: "block",
+                  userSelect: "none",
+                }}
+              />
+              <div
+                style={{
+                  position: "absolute", top: 52, right: 14,
+                  pointerEvents: "none",
+                }}
+              >
+                <span className="badge-neutral" style={{ fontSize: 10, padding: "4px 10px", color: "var(--red-400)", border: "1px solid rgba(220,38,38,0.25)", background: "rgba(220,38,38,0.05)" }}>
+                  Encroachment Heatmap
+                </span>
+              </div>
+            </div>
+          )
         )}
-
-        <div
-          style={{
-            position: "absolute",
-            top: 0, bottom: 0,
-            left: `${sliderValue}%`,
-            width: 2,
-            background: "var(--emerald-500)",
-            transform: "translateX(-50%)",
-            zIndex: 10,
-            pointerEvents: "none",
-          }}
-        />
-
-        {/* ---- Drag handle ---- */}
-        <div
-          style={{
-            position: "absolute",
-            top: "50%",
-            left: `${sliderValue}%`,
-            transform: "translate(-50%, -50%)",
-            zIndex: 15,
-            width: 36, height: 36,
-            borderRadius: "50%",
-            background: "var(--bg-base)",
-            border: "2px solid var(--emerald-500)",
-            boxShadow: "0 0 16px rgba(5,150,105,0.5)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            cursor: "ew-resize",
-            pointerEvents: "none",
-          }}
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M5 4L2 8l3 4M11 4l3 4-3 4" stroke="#34d399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </div>
-
-        {/* ---- Before/After edge labels at bottom ---- */}
-        <div style={{
-          position: "absolute", bottom: 52, left: 14,
-          pointerEvents: "none", zIndex: 12,
-        }}>
-          <span style={{
-            fontSize: 9, fontFamily: "monospace", fontWeight: 700,
-            letterSpacing: "0.08em", textTransform: "uppercase",
-            color: "var(--text-muted)",
-          }}>← Before</span>
-        </div>
-        <div style={{
-          position: "absolute", bottom: 52, right: 14,
-          pointerEvents: "none", zIndex: 12,
-        }}>
-          <span style={{
-            fontSize: 9, fontFamily: "monospace", fontWeight: 700,
-            letterSpacing: "0.08em", textTransform: "uppercase",
-            color: "var(--text-muted)",
-          }}>After →</span>
-        </div>
       </div>
 
       {/* ---- Slider track at bottom ---- */}
-      <div
-        style={{
-          flexShrink: 0,
-          padding: "10px 16px",
-          background: "rgba(5,12,20,0.95)",
-          borderTop: "1px solid var(--border-dim)",
-          display: "flex", alignItems: "center", gap: 12,
-        }}
-      >
-        <span style={{ fontSize: 9, fontFamily: "monospace", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", flexShrink: 0 }}>
-          {beforeYear}
-        </span>
-        <input
-          type="range"
-          min="0" max="100"
-          value={sliderValue}
-          onChange={e => onSliderChange(Number(e.target.value))}
-          style={{ flex: 1 }}
-        />
-        <span style={{ fontSize: 9, fontFamily: "monospace", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", flexShrink: 0 }}>
-          {afterYear}
-        </span>
-        <span style={{
-          fontSize: 10, fontFamily: "monospace", fontWeight: 700,
-          color: "var(--emerald-400)",
-          background: "var(--emerald-dim)",
-          border: "1px solid rgba(5,150,105,0.25)",
-          borderRadius: 4, padding: "2px 8px", flexShrink: 0,
-          minWidth: 40, textAlign: "center",
-        }}>
-          {Math.round(sliderValue)}%
-        </span>
-      </div>
+      {showSlider && (
+        <div
+          style={{
+            flexShrink: 0,
+            padding: "10px 16px",
+            background: "rgba(5,12,20,0.95)",
+            borderTop: "1px solid var(--border-dim)",
+            display: "flex", alignItems: "center", gap: 12,
+          }}
+        >
+          <span style={{ fontSize: 9, fontFamily: "monospace", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", flexShrink: 0 }}>
+            {beforeYear}
+          </span>
+          <input
+            type="range"
+            min="0" max="100"
+            value={sliderValue}
+            onChange={e => onSliderChange(Number(e.target.value))}
+            style={{ flex: 1 }}
+          />
+          <span style={{ fontSize: 9, fontFamily: "monospace", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", flexShrink: 0 }}>
+            {afterYear}
+          </span>
+          <span style={{
+            fontSize: 10, fontFamily: "monospace", fontWeight: 700,
+            color: "var(--emerald-400)",
+            background: "var(--emerald-dim)",
+            border: "1px solid rgba(5,150,105,0.25)",
+            borderRadius: 4, padding: "2px 8px", flexShrink: 0,
+            minWidth: 40, textAlign: "center",
+          }}>
+            {Math.round(sliderValue)}%
+          </span>
+        </div>
+      )}
     </div>
   );
 }
