@@ -128,11 +128,11 @@ export default function ThreeGlobe({ zones, selectedZoneKey, onSelectZone }: Thr
     controlsRef.current = controls;
 
     // =========================================================
-    // BASE PLATFORM — a dark angled terrain slab
+    // BASE PLATFORM — a light angled terrain slab
     // =========================================================
     const baseGeo = new THREE.BoxGeometry(SCENE_W + 2, 0.25, SCENE_H + 2);
     const baseMat = new THREE.MeshStandardMaterial({
-      color: 0x050c14,
+      color: 0xe2e8f0,
       roughness: 0.7,
       metalness: 0.3,
     });
@@ -150,12 +150,12 @@ export default function ThreeGlobe({ zones, selectedZoneKey, onSelectZone }: Thr
     terrainCanvas.height = texSize;
     const tc = terrainCanvas.getContext("2d")!;
 
-    // Dark deep-ocean base
-    tc.fillStyle = "#050c14";
+    // Light base
+    tc.fillStyle = "#e2e8f0";
     tc.fillRect(0, 0, texSize, texSize);
 
     // Grid overlay — thin emerald lines
-    tc.strokeStyle = "rgba(5,150,105,0.1)";
+    tc.strokeStyle = "rgba(5,150,105,0.06)";
     tc.lineWidth = 0.8;
     const gridDivs = 22;
     for (let i = 0; i <= gridDivs; i++) {
@@ -192,14 +192,14 @@ export default function ThreeGlobe({ zones, selectedZoneKey, onSelectZone }: Thr
     tc.closePath();
 
     const landGrad = tc.createLinearGradient(0, 0, texSize, texSize);
-    landGrad.addColorStop(0, "rgba(8,22,44,0.95)");
-    landGrad.addColorStop(0.5, "rgba(10,26,50,0.9)");
-    landGrad.addColorStop(1, "rgba(6,18,38,0.95)");
+    landGrad.addColorStop(0, "rgba(248,250,252,0.95)");
+    landGrad.addColorStop(0.5, "rgba(255,255,255,0.95)");
+    landGrad.addColorStop(1, "rgba(241,245,249,0.95)");
     tc.fillStyle = landGrad;
     tc.fill();
 
     // Land border glow
-    tc.strokeStyle = "rgba(5,150,105,0.35)";
+    tc.strokeStyle = "rgba(5,150,105,0.25)";
     tc.lineWidth = 2.5;
     tc.stroke();
 
@@ -210,7 +210,7 @@ export default function ThreeGlobe({ zones, selectedZoneKey, onSelectZone }: Thr
       [[74, 17], [77, 19]], // Maharashtra-Goa
     ] as [number, number][][];
 
-    tc.strokeStyle = "rgba(51,90,130,0.25)";
+    tc.strokeStyle = "rgba(15,23,42,0.08)";
     tc.lineWidth = 1;
     stateLines.forEach(pts => {
       tc.beginPath();
@@ -456,7 +456,7 @@ export default function ThreeGlobe({ zones, selectedZoneKey, onSelectZone }: Thr
     }
     const starGeo = new THREE.BufferGeometry();
     starGeo.setAttribute("position", new THREE.BufferAttribute(starPositions, 3));
-    const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.05, transparent: true, opacity: 0.4 });
+    const starMat = new THREE.PointsMaterial({ color: 0x475569, size: 0.05, transparent: true, opacity: 0.3 });
     scene.add(new THREE.Points(starGeo, starMat));
 
     // =========================================================

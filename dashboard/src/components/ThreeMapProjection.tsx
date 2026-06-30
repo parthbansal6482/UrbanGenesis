@@ -88,7 +88,7 @@ export default function ThreeMapProjection({
     // =========================================================
     const baseGeo = new THREE.BoxGeometry(5.6, 0.22, 5.6);
     const baseMat = new THREE.MeshStandardMaterial({
-      color: 0x050c14,
+      color: 0xe2e8f0,
       roughness: 0.6,
       metalness: 0.4,
     });
@@ -98,7 +98,7 @@ export default function ThreeMapProjection({
     scene.add(baseMesh);
 
     // Grid on base
-    const gridHelper = new THREE.GridHelper(5.6, 10, 0x059669, 0x0d1826);
+    const gridHelper = new THREE.GridHelper(5.6, 10, 0x059669, 0xcbd5e1);
     gridHelper.position.y = 0.002;
     scene.add(gridHelper);
 
@@ -187,12 +187,12 @@ export default function ThreeMapProjection({
       c.width = 512; c.height = 512;
       const ctx = c.getContext("2d")!;
 
-      // Deep dark base
-      ctx.fillStyle = "#050c14";
+      // Off-white base
+      ctx.fillStyle = "#fafaf9";
       ctx.fillRect(0, 0, 512, 512);
 
       // Blueprint grid
-      ctx.strokeStyle = "rgba(5,150,105,0.1)";
+      ctx.strokeStyle = "rgba(15, 23, 42, 0.05)";
       ctx.lineWidth = 0.8;
       for (let i = 0; i <= 512; i += 24) {
         ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke();
@@ -200,33 +200,33 @@ export default function ThreeMapProjection({
       }
 
       // Header band
-      ctx.fillStyle = "rgba(5,150,105,0.12)";
+      ctx.fillStyle = "rgba(5, 150, 105, 0.06)";
       ctx.fillRect(0, 0, 512, 70);
 
-      ctx.fillStyle = "#34d399";
+      ctx.fillStyle = "#059669";
       ctx.font = "bold 13px monospace";
       ctx.textAlign = "center";
       ctx.fillText("SAT4RISK // FARMGUARD SURVEILLANCE", 256, 28);
 
-      ctx.fillStyle = "rgba(52,211,153,0.6)";
+      ctx.fillStyle = "#475569";
       ctx.font = "10px monospace";
       ctx.fillText(`PERIOD: ${year}  ·  SENSOR: SENTINEL-2 L2A`, 256, 50);
 
       // Warning text
-      ctx.fillStyle = "#ef4444";
+      ctx.fillStyle = "#dc2626";
       ctx.font = "bold 11px monospace";
       ctx.textAlign = "left";
       ctx.fillText(`// SATELLITE RASTER ABSENT FOR ${year}`, 32, 120);
       ctx.fillText(`// MODE: ${label.toUpperCase()}`, 32, 144);
 
       // Crosshair
-      ctx.strokeStyle = "rgba(5,150,105,0.5)";
+      ctx.strokeStyle = "rgba(5, 150, 105, 0.3)";
       ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(256, 320, 55, 0, Math.PI * 2); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(256, 248); ctx.lineTo(256, 392); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(184, 320); ctx.lineTo(328, 320); ctx.stroke();
 
-      ctx.fillStyle = "rgba(52,211,153,0.7)";
+      ctx.fillStyle = "#475569";
       ctx.font = "9px monospace";
       ctx.textAlign = "center";
       ctx.fillText("TARGET BOUNDS GRID ACTIVE", 256, 400);
