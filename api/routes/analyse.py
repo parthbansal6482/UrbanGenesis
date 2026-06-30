@@ -276,6 +276,7 @@ class BBoxAnalyseRequest(BaseModel):
     max_lon: float
     max_lat: float
     years: list[int] | None = None
+    force_refresh: bool | None = False
 
 
 @router.post("/api/analyse_bbox")
@@ -283,6 +284,14 @@ def analyse_bbox(request: BBoxAnalyseRequest):
     bbox = (request.min_lon, request.min_lat, request.max_lon, request.max_lat)
     try:
         target_years = [2017, 2019, 2021, 2023]
+        if request.force_refresh:
+            import shutil
+            cache_key = bbox_cache_key(bbox)
+            cache_dir = CUSTOM_REGION_CACHE_DIR / cache_key
+            if cache_dir.exists():
+                logger.info(f"Force refresh requested for bbox {bbox} — deleting cached folder {cache_dir}")
+                shutil.rmtree(cache_dir)
+
         verdict = get_cached_or_analyse(bbox, years=target_years)
         cache_key = bbox_cache_key(bbox)
 
@@ -293,8 +302,12 @@ def analyse_bbox(request: BBoxAnalyseRequest):
         if not available_years:
             raise HTTPException(status_code=500, detail="No timeseries data found.")
 
-        before_yr = request.years[0] if (request.years and len(request.years) > 0) else available_years[0]
-        after_yr = request.years[-1] if (request.years and len(request.years) > 1) else available_years[-1]
+        # Clamp requested years to available generated years to prevent returning URLs for non-existent years
+        requested_before = request.years[0] if (request.years and len(request.years) > 0) else available_years[0]
+        requested_after = request.years[-1] if (request.years and len(request.years) > 1) else available_years[-1]
+
+        before_yr = min(available_years, key=lambda x: abs(x - requested_before))
+        after_yr = min(available_years, key=lambda x: abs(x - requested_after))
 
         rec_before = next((r for r in timeseries if r["year"] == before_yr), None)
         rec_after = next((r for r in timeseries if r["year"] == after_yr), None)

@@ -98,13 +98,32 @@ def get_cached_or_analyse(bbox: Tuple[float, float, float, float], years: list =
     if verdict_path.exists():
         import json
 
-        logger.info(f"Cache hit for {cache_key}, checking years")
+        logger.info(f"Cache hit for {cache_key}, checking years and files")
         try:
             with open(verdict_path) as f:
                 data = json.load(f)
                 cached_years = {r["year"] for r in data.get("timeseries", [])}
                 if all(y in cached_years for y in target_years):
-                    return data
+                    # Ensure all required PNGs exist on disk
+                    cache_dir = CUSTOM_REGION_CACHE_DIR / cache_key
+                    images_exist = True
+                    for yr in target_years:
+                        if not (cache_dir / f"true_color_{yr}.png").exists():
+                            images_exist = False
+                            break
+                        if not (cache_dir / f"ndvi_map_{yr}.png").exists():
+                            images_exist = False
+                            break
+                        if not (cache_dir / f"mask_rgb_{yr}.png").exists():
+                            images_exist = False
+                            break
+                    if not (cache_dir / "encroachment_heatmap.png").exists():
+                        images_exist = False
+
+                    if images_exist:
+                        return data
+                    else:
+                        logger.info(f"Some cache image files are missing for {cache_key} — regenerating")
         except Exception as e:
             logger.warning(f"Error reading cache for {cache_key}: {e}")
 

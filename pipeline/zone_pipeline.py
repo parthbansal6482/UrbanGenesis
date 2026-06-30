@@ -91,6 +91,17 @@ def _process_single_year(
         Image.fromarray(mask_to_rgb(fg_mask)).save(zone_dir / f"mask_rgb_{year}.png")
         Image.fromarray(mask_to_true_color(fg_mask, size, year)).save(zone_dir / f"true_color_{year}.png")
         Image.fromarray(mask_to_ndvi(fg_mask, size, year)).save(zone_dir / f"ndvi_map_{year}.png")
+    else:
+        # Ensure all three visual overlays exist to prevent frontend 404s when switching modes
+        h, w = fg_mask.shape[:2]
+        tc_path = zone_dir / f"true_color_{year}.png"
+        ndvi_path = zone_dir / f"ndvi_map_{year}.png"
+        if not tc_path.exists():
+            logger.info("  True color image missing; generating mock fallback from mask")
+            Image.fromarray(mask_to_true_color(fg_mask, w, year)).save(tc_path)
+        if not ndvi_path.exists():
+            logger.info("  NDVI image missing; generating mock fallback from mask")
+            Image.fromarray(mask_to_ndvi(fg_mask, w, year)).save(ndvi_path)
 
     return fg_mask
 
