@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -358,6 +358,21 @@ const saveCustomZone = (zone: ZoneData) => {
   }
 };
 
+const getBboxPhysicalArea = (minLon: number, minLat: number, maxLon: number, maxLat: number): string => {
+  const avgLat = (minLat + maxLat) / 2;
+  const latRad = (avgLat * Math.PI) / 180;
+  const widthKm = Math.abs(maxLon - minLon) * 111.32 * Math.cos(latRad);
+  const heightKm = Math.abs(maxLat - minLat) * 111.32;
+  const areaKm2 = widthKm * heightKm;
+  const areaHa = areaKm2 * 100;
+
+  if (areaKm2 >= 1.0) {
+    return `${areaKm2.toFixed(2)} km² (~${Math.round(areaHa)} ha)`;
+  } else {
+    return `${areaHa.toFixed(1)} ha (~${areaKm2.toFixed(3)} km²)`;
+  }
+};
+
 // ============================================================
 // MAIN PAGE
 // ============================================================
@@ -382,6 +397,8 @@ export default function Home() {
   const [loadingAnalysis, setLoadingAnalysis] = useState<boolean>(false);
   const [apiWarning, setApiWarning] = useState<string | null>(null);
   const [expandedChart, setExpandedChart] = useState<"line" | "encroachment" | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
+  const forceRefreshRef = useRef<boolean>(false);
 
   const currentZone = zones.find(z => z.key === selectedZoneKey) || null;
 
@@ -394,6 +411,25 @@ export default function Home() {
     }
     return [2017, 2019, 2021, 2023];
   }, [inputMode, currentZone, analysis]);
+
+  // Clamp selected years when availableYears change (e.g. switching zones or modes)
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!availableYears || availableYears.length === 0) return;
+    setBeforeYear(prev => {
+      if (availableYears.includes(prev)) return prev;
+      return availableYears.reduce((prevClose, curr) => 
+        Math.abs(curr - prev) < Math.abs(prevClose - prev) ? curr : prevClose
+      );
+    });
+    setAfterYear(prev => {
+      if (availableYears.includes(prev)) return prev;
+      return availableYears.reduce((prevClose, curr) => 
+        Math.abs(curr - prev) < Math.abs(prevClose - prev) ? curr : prevClose
+      );
+    });
+  }, [availableYears]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const validateFrontendBbox = (minLon: number, minLat: number, maxLon: number, maxLat: number): string | null => {
     if (isNaN(minLon) || isNaN(minLat) || isNaN(maxLon) || isNaN(maxLat)) {
@@ -484,6 +520,8 @@ export default function Home() {
     setLoadingAnalysis(true);
     setAnalysisError(null);
 
+    let active = true;
+
     const isCustom = selectedZoneKey.startsWith("bbox_");
 
     let promise;
@@ -494,6 +532,15 @@ export default function Home() {
       const max_lon = parseFloat(parts[3]);
       const max_lat = parseFloat(parts[4]);
 
+      console.log("Fetching custom bbox analysis:", {
+        min_lon,
+        min_lat,
+        max_lon,
+        max_lat,
+        years: [beforeYear, afterYear],
+        force_refresh: forceRefreshRef.current,
+      });
+
       promise = fetch(`${API_ORIGIN}/api/analyse_bbox`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -503,6 +550,7 @@ export default function Home() {
           max_lon,
           max_lat,
           years: [beforeYear, afterYear],
+          force_refresh: forceRefreshRef.current,
         }),
       });
     } else {
@@ -511,6 +559,7 @@ export default function Home() {
 
     promise
       .then(r => {
+        if (!active) return null;
         if (!r.ok) {
           return r.json().then(err => {
             throw new Error(err.detail || "Analysis failed");
@@ -519,6 +568,7 @@ export default function Home() {
         return r.json();
       })
       .then(d => {
+        if (!active || !d) return;
         setAnalysis(d);
         setApiWarning(null);
 
@@ -548,11 +598,20 @@ export default function Home() {
         }
       })
       .catch((err) => {
+        if (!active) return;
         setAnalysisError(err.message || "Failed to fetch analysis data");
         setAnalysis(null);
       })
-      .finally(() => setLoadingAnalysis(false));
-  }, [selectedZoneKey, beforeYear, afterYear]);
+      .finally(() => {
+        if (!active) return;
+        setLoadingAnalysis(false);
+        forceRefreshRef.current = false;
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedZoneKey, beforeYear, afterYear, refreshTrigger]);
 
   const handleSelectZone = (key: string) => {
     setSelectedZoneKey(key);
@@ -568,16 +627,24 @@ export default function Home() {
 
   const getOverlayUrl = (which: "before" | "after") => {
     if (!analysis) return null;
+    let url = null;
     if (vizMode === "Infrastructure Encroachment Heatmap") {
       if (which === "before") {
-        return analysis.overlays.before.mask;
+        url = analysis.overlays.before.mask;
+      } else {
+        url = analysis.overlays.encroachment_heatmap || null;
       }
-      return analysis.overlays.encroachment_heatmap || null;
+    } else {
+      const ov = analysis.overlays[which];
+      if (vizMode === "True Color Satellite Image") url = ov.true_color;
+      else if (vizMode === "NDVI Vegetation Map") url = ov.ndvi;
+      else url = ov.mask;
     }
-    const ov = analysis.overlays[which];
-    if (vizMode === "True Color Satellite Image") return ov.true_color;
-    if (vizMode === "NDVI Vegetation Map") return ov.ndvi;
-    return ov.mask;
+
+    if (url && selectedZoneKey && selectedZoneKey.startsWith("bbox_") && refreshTrigger > 0) {
+      return `${url}?t=${refreshTrigger}`;
+    }
+    return url;
   };
 
   // ============================================================
@@ -796,6 +863,7 @@ export default function Home() {
                 isMask={vizMode === "AI Land Use Classification" || vizMode === "Infrastructure Encroachment Heatmap"}
                 sliderValue={sliderValue}
                 onSliderChange={setSliderValue}
+                showSlider={vizMode !== "Infrastructure Encroachment Heatmap"}
               />
             )}
           </div>
@@ -863,11 +931,54 @@ export default function Home() {
                     </p>
                   </div>
                 ) : (
-                  <select id="zone-select" value={selectedZoneKey || ""}
-                    onChange={e => handleSelectZone(e.target.value)}>
-                    <option value="" disabled>Select a Region…</option>
-                    {zones.map(z => <option key={z.key} value={z.key}>{z.name}</option>)}
-                  </select>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <select id="zone-select" value={selectedZoneKey || ""}
+                      onChange={e => handleSelectZone(e.target.value)}
+                      style={{ flex: 1 }}>
+                      <option value="" disabled>Select a Region…</option>
+                      {zones.map(z => <option key={z.key} value={z.key}>{z.name}</option>)}
+                    </select>
+                    {selectedZoneKey && selectedZoneKey.startsWith("bbox_") && (
+                      <button
+                        title="Re-analyze this custom bounding box"
+                        disabled={loadingAnalysis}
+                        onClick={() => {
+                          setLoadingAnalysis(true);
+                          forceRefreshRef.current = true;
+                          setRefreshTrigger(prev => prev + 1);
+                        }}
+                        style={{
+                          background: "var(--emerald-dim)",
+                          border: "1px solid var(--border-active)",
+                          borderRadius: 8,
+                          padding: "8px 12px",
+                          color: "var(--emerald-400)",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          opacity: loadingAnalysis ? 0.5 : 1,
+                          height: 35,
+                          width: 38,
+                          flexShrink: 0,
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        {loadingAnalysis ? (
+                          <div style={{
+                            width: 14, height: 14, borderRadius: "50%",
+                            border: "1.5px solid var(--border-dim)",
+                            borderTopColor: "var(--emerald-400)",
+                            animation: "spin 0.8s linear infinite"
+                          }} />
+                        ) : (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+                          </svg>
+                        )}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -890,6 +1001,9 @@ export default function Home() {
                       <div>Min Lat: {customBbox[1].toFixed(4)}</div>
                       <div>Max Lon: {customBbox[2].toFixed(4)}</div>
                       <div>Max Lat: {customBbox[3].toFixed(4)}</div>
+                    </div>
+                    <div style={{ fontSize: 10, fontFamily: "monospace", color: "var(--emerald-400)", borderTop: "1px dashed var(--border-dim)", paddingTop: 6, marginTop: 2 }}>
+                      Estimated Area: {getBboxPhysicalArea(customBbox[0], customBbox[1], customBbox[2], customBbox[3])}
                     </div>
                     {coordsError && (
                       <p style={{ color: "var(--red-400)", fontSize: 10, margin: 0, fontFamily: "monospace" }}>
@@ -975,6 +1089,17 @@ export default function Home() {
                   <p style={{ color: "var(--red-400)", fontSize: 10, margin: 0, fontFamily: "monospace" }}>
                     ⚠️ {coordsError}
                   </p>
+                )}
+
+                {!coordsError && coordsInput.minLon && coordsInput.minLat && coordsInput.maxLon && coordsInput.maxLat && (
+                  <div style={{ fontSize: 10, fontFamily: "monospace", color: "var(--emerald-400)", borderTop: "1px dashed var(--border-dim)", paddingTop: 6, marginTop: 2, marginBottom: 2 }}>
+                    Estimated Area: {getBboxPhysicalArea(
+                      parseFloat(coordsInput.minLon),
+                      parseFloat(coordsInput.minLat),
+                      parseFloat(coordsInput.maxLon),
+                      parseFloat(coordsInput.maxLat)
+                    )}
+                  </div>
                 )}
 
                 <button
