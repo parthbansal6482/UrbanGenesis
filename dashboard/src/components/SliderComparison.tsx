@@ -15,6 +15,7 @@ interface SliderComparisonProps {
   sliderValue: number;          // 0–100: position of divider (% from left)
   onSliderChange: (v: number) => void;
   showSlider?: boolean;
+  isMock?: boolean;
 }
 
 // ============================================================
@@ -90,29 +91,34 @@ export default function SliderComparison({
   sliderValue,
   onSliderChange,
   showSlider = true,
+  isMock = false,
 }: SliderComparisonProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const isDragging = useRef(false);
   const [beforeSrc, setBeforeSrc] = useState<string | null>(null);
   const [afterSrc, setAfterSrc] = useState<string | null>(null);
   const [loadingBefore, setLoadingBefore] = useState(true);
   const [loadingAfter, setLoadingAfter] = useState(true);
-  // Natural aspect ratio of the loaded raster — drives canvas width
-  const [imgAspectRatio, setImgAspectRatio] = useState<number | null>(null);
+
+  // ---- Zoom & Pan states ----
+  const [zoomScale, setZoomScale] = useState(1.0);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+
+  // Refs/state for tracking drag status separately
+  const isDraggingSlider = useRef(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const panStart = useRef({ x: 0, y: 0 });
+  const initialPanOffset = useRef({ x: 0, y: 0 });
 
   // ---- Load / process images ----
   const processImage = useCallback((
     url: string | null,
     year: number,
     maskMode: boolean,
-    captureAspect: boolean,
     onDone: (src: string) => void
   ) => {
     const fallbackLabel = maskMode ? "AI classification" : "satellite band";
 
     if (!url) {
-      // Fallback canvas is always 512×512 — ratio 1:1
-      if (captureAspect) setImgAspectRatio(1);
       setTimeout(() => onDone(makeBlueprintDataUrl(year, fallbackLabel)), 0);
       return;
     }
@@ -121,15 +127,10 @@ export default function SliderComparison({
     const img = new Image();
 
     img.onload = () => {
-      // Capture natural dimensions from the before image so canvas fits exactly
-      if (captureAspect && img.naturalWidth && img.naturalHeight) {
-        setImgAspectRatio(img.naturalWidth / img.naturalHeight);
-      }
       onDone(finalUrl);
     };
 
     img.onerror = () => {
-      if (captureAspect) setImgAspectRatio(1);
       onDone(makeBlueprintDataUrl(year, "load error"));
     };
     img.src = finalUrl;
@@ -139,9 +140,7 @@ export default function SliderComparison({
     let active = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset loading state to true synchronously when inputs change to display loading spinner
     setLoadingBefore(true);
-    // Reset ratio on source change so old ratio doesn't flash
-    setImgAspectRatio(null);
-    processImage(beforeImageUrl, beforeYear, isMask, true, src => {
+    processImage(beforeImageUrl, beforeYear, isMask, src => {
       if (active) {
         setBeforeSrc(src);
         setLoadingBefore(false);
@@ -156,7 +155,7 @@ export default function SliderComparison({
     let active = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset loading state to true synchronously when inputs change to display loading spinner
     setLoadingAfter(true);
-    processImage(afterImageUrl, afterYear, isMask, false, src => {
+    processImage(afterImageUrl, afterYear, isMask, src => {
       if (active) {
         setAfterSrc(src);
         setLoadingAfter(false);
@@ -167,7 +166,32 @@ export default function SliderComparison({
     };
   }, [afterImageUrl, afterYear, isMask, processImage]);
 
-  // ---- Drag logic ----
+  // ---- Non-passive Wheel Zoom handler ----
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const zoomFactor = 1.08;
+      setZoomScale(prev => {
+        let next = prev;
+        if (e.deltaY < 0) {
+          next = Math.min(prev * zoomFactor, 5.0);
+        } else {
+          next = Math.max(prev / zoomFactor, 0.5);
+        }
+        return next;
+      });
+    };
+
+    container.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      container.removeEventListener("wheel", handleWheel);
+    };
+  }, []);
+
+  // ---- Drag & Pan Pointer logic ----
   const updateFromPointer = useCallback((clientX: number) => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
@@ -176,22 +200,56 @@ export default function SliderComparison({
   }, [onSliderChange]);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
-    isDragging.current = true;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    updateFromPointer(e.clientX);
-  }, [updateFromPointer]);
+    const target = e.target as HTMLElement;
+    // Check if clicked directly on slider handle or slider line
+    const isHandleClick = target.closest(".slider-handle-trigger") !== null;
+
+    if (showSlider && isHandleClick) {
+      isDraggingSlider.current = true;
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      updateFromPointer(e.clientX);
+    } else {
+      setIsPanning(true);
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      panStart.current = { x: e.clientX, y: e.clientY };
+      initialPanOffset.current = { ...panOffset };
+    }
+  }, [showSlider, updateFromPointer, panOffset]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
-    if (!isDragging.current) return;
-    updateFromPointer(e.clientX);
-  }, [updateFromPointer]);
+    if (isDraggingSlider.current) {
+      updateFromPointer(e.clientX);
+    } else if (isPanning) {
+      const dx = e.clientX - panStart.current.x;
+      const dy = e.clientY - panStart.current.y;
+      setPanOffset({
+        x: initialPanOffset.current.x + dx,
+        y: initialPanOffset.current.y + dy,
+      });
+    }
+  }, [updateFromPointer, isPanning]);
 
-  const onPointerUp = useCallback(() => { isDragging.current = false; }, []);
+  const onPointerUp = useCallback(() => {
+    isDraggingSlider.current = false;
+    setIsPanning(false);
+  }, []);
 
   const isLoading = loadingBefore || loadingAfter;
-
   const isBeforeMask = isMask && beforeSrc ? !beforeSrc.startsWith("data:") : false;
   const isAfterMask = isMask && afterSrc ? !afterSrc.startsWith("data:") : false;
+
+  // Shared hardware-accelerated transform styles for standard layout containing
+  const transformStyle: React.CSSProperties = {
+    width: "100%",
+    height: "100%",
+    objectFit: "contain",
+    transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomScale})`,
+    transformOrigin: "center",
+    display: "block",
+    userSelect: "none",
+    // Only animate on zoom adjustments, not live dragging
+    transition: isPanning ? "none" : "transform 0.12s ease-out",
+  };
 
   return (
     <div
@@ -201,7 +259,28 @@ export default function SliderComparison({
         display: "flex", flexDirection: "column", alignItems: "center",
       }}
     >
-      {/* ---- Loading indicator only — tab bar already labels this view ---- */}
+      {/* ---- Simulation warning badge ---- */}
+      {isMock && (
+        <div style={{
+          position: "absolute", top: 12, left: "50%",
+          transform: "translateX(-50%)", zIndex: 30,
+          pointerEvents: "none",
+        }}>
+          <span className="glass-card" style={{
+            display: "inline-block",
+            fontSize: 9, fontFamily: "monospace", fontWeight: 800,
+            padding: "4px 10px", borderRadius: 6,
+            color: "#b45309",
+            border: "1px solid rgba(217, 119, 6, 0.25)",
+            background: "rgba(217, 119, 6, 0.05)",
+            letterSpacing: "0.06em",
+          }}>
+            ⚠️ SIMULATED DATA
+          </span>
+        </div>
+      )}
+
+      {/* ---- Loading indicator only ---- */}
       {isLoading && (
         <div style={{
           position: "absolute", top: 12, right: 12,
@@ -216,70 +295,64 @@ export default function SliderComparison({
 
       <div
         ref={containerRef}
-        onPointerDown={showSlider ? onPointerDown : undefined}
-        onPointerMove={showSlider ? onPointerMove : undefined}
-        onPointerUp={showSlider ? onPointerUp : undefined}
-        onPointerLeave={showSlider ? onPointerUp : undefined}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerLeave={onPointerUp}
         className="bg-grid"
         style={{
           flex: 1,
+          width: "100%",
+          height: "100%",
           position: "relative",
           overflow: "hidden",
-          cursor: showSlider ? "ew-resize" : "default",
+          cursor: isPanning ? "grabbing" : (showSlider ? "grab" : "default"),
           userSelect: "none",
-          // Shrink width to match the image's natural aspect ratio — no side gaps
-          ...(imgAspectRatio
-            ? { width: "auto", aspectRatio: String(imgAspectRatio), maxWidth: "100%" }
-            : { width: "100%" }),
         }}
       >
         {showSlider ? (
           <>
-            {/* BEFORE image — full width, clipped on the right */}
+            {/* BEFORE image — full width viewport, clipped on the right */}
             {beforeSrc && (
               <div style={{
                 position: "absolute", inset: 0,
                 clipPath: `inset(0 ${100 - sliderValue}% 0 0)`,
+                pointerEvents: "none",
               }}>
                 <img
                   src={beforeSrc}
                   alt={`Before ${beforeYear}`}
                   draggable={false}
                   style={{
-                    width: "100%", height: "100%",
-                    objectFit: "fill",
+                    ...transformStyle,
                     opacity,
-                    display: "block",
-                    userSelect: "none",
                     mixBlendMode: isBeforeMask ? "screen" : "normal",
                   }}
                 />
               </div>
             )}
 
-            {/* AFTER image — full width, clipped on the left */}
+            {/* AFTER image — full width viewport, clipped on the left */}
             {afterSrc && (
               <div style={{
                 position: "absolute", inset: 0,
                 clipPath: `inset(0 0 0 ${sliderValue}%)`,
+                pointerEvents: "none",
               }}>
                 <img
                   src={afterSrc}
                   alt={`After ${afterYear}`}
                   draggable={false}
                   style={{
-                    width: "100%", height: "100%",
-                    objectFit: "fill",
+                    ...transformStyle,
                     opacity,
-                    display: "block",
-                    userSelect: "none",
                     mixBlendMode: isAfterMask ? "screen" : "normal",
                   }}
                 />
               </div>
             )}
 
-            {/* ---- Year labels: outside clip containers so they're never cut off ---- */}
+            {/* ---- Year labels: outside clip containers ---- */}
             <div style={{
               position: "absolute", top: 12, left: 14,
               pointerEvents: "none", zIndex: 12,
@@ -305,21 +378,24 @@ export default function SliderComparison({
               }}>{afterYear}</span>
             </div>
 
+            {/* Vertical Split Line */}
             <div
+              className="slider-handle-trigger"
               style={{
                 position: "absolute",
                 top: 0, bottom: 0,
                 left: `${sliderValue}%`,
-                width: 2,
+                width: 4,
                 background: "var(--emerald-500)",
                 transform: "translateX(-50%)",
                 zIndex: 10,
-                pointerEvents: "none",
+                cursor: "ew-resize",
               }}
             />
 
-            {/* ---- Drag handle ---- */}
+            {/* ---- Drag handle circular pill ---- */}
             <div
+              className="slider-handle-trigger"
               style={{
                 position: "absolute",
                 top: "50%",
@@ -330,10 +406,9 @@ export default function SliderComparison({
                 borderRadius: "50%",
                 background: "var(--bg-base)",
                 border: "2px solid var(--emerald-500)",
-                boxShadow: "0 0 16px rgba(5,150,105,0.5)",
+                boxShadow: "0 0 16px rgba(5,150,105,0.4)",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 cursor: "ew-resize",
-                pointerEvents: "none",
               }}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -368,25 +443,19 @@ export default function SliderComparison({
             </div>
           </>
         ) : (
-          /* Single full-width Encroachment Heatmap overlay view */
+          /* Single full-width Encroachment Heatmap view (also supports zoom & pan) */
           afterSrc && (
-            <div style={{ position: "absolute", inset: 0 }}>
+            <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
               <img
                 src={afterSrc}
                 alt="Encroachment Heatmap"
                 draggable={false}
-                style={{
-                  width: "100%", height: "100%",
-                  objectFit: "fill",
-                  opacity,
-                  display: "block",
-                  userSelect: "none",
-                }}
+                style={transformStyle}
               />
               <div
                 style={{
-                  position: "absolute", top: 52, right: 14,
-                  pointerEvents: "none",
+                  position: "absolute", top: 12, right: 14,
+                  pointerEvents: "none", zIndex: 12,
                 }}
               >
                 <span className="badge-neutral" style={{ fontSize: 10, padding: "4px 10px", color: "var(--red-400)", border: "1px solid rgba(220,38,38,0.25)", background: "rgba(220,38,38,0.05)" }}>
@@ -396,9 +465,52 @@ export default function SliderComparison({
             </div>
           )
         )}
+
+        {/* ---- Zoom / Reset controls HUD ---- */}
+        <div style={{
+          position: "absolute", bottom: 48, right: 12, zIndex: 30,
+          display: "flex", flexDirection: "column", gap: 4,
+          pointerEvents: "auto",
+        }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); setZoomScale(z => Math.min(z * 1.25, 5.0)); }}
+            className="glass-card"
+            style={{
+              width: 30, height: 30, borderRadius: 6, border: "1px solid var(--border-dim)",
+              background: "#fafaf9", color: "var(--text-secondary)", fontSize: 16,
+              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+              fontWeight: "bold", outline: "none",
+            }}
+            title="Zoom In"
+          >+</button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setZoomScale(z => Math.max(z * 0.8, 0.5)); }}
+            className="glass-card"
+            style={{
+              width: 30, height: 30, borderRadius: 6, border: "1px solid var(--border-dim)",
+              background: "#fafaf9", color: "var(--text-secondary)", fontSize: 16,
+              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+              fontWeight: "bold", outline: "none",
+            }}
+            title="Zoom Out"
+          >−</button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setZoomScale(1.0);
+              setPanOffset({ x: 0, y: 0 });
+            }}
+            className="glass-card"
+            style={{
+              width: 30, height: 30, borderRadius: 6, border: "1px solid var(--border-dim)",
+              background: "#fafaf9", color: "var(--text-secondary)", fontSize: 11,
+              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+              fontFamily: "monospace", outline: "none",
+            }}
+            title="Reset View"
+          >⊡</button>
+        </div>
       </div>
-
-
     </div>
   );
 }
