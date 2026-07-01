@@ -37,24 +37,52 @@ from pipeline.sentinel_fetcher import fetch_sentinel2_true_color
 logger = logging.getLogger(__name__)
 
 
+import math
+
+def calculate_auto_resolution(bbox: list[float], max_px: int = 1024) -> tuple[int, int] | None:
+    """
+    Calculate the pixel dimensions required to fetch Sentinel-2 imagery
+    at exactly 10 meters per pixel, preserving the aspect ratio.
+    If the required resolution is within max_px, returns None (native resolution).
+    Otherwise, returns scaled (height, width) tuple capped at max_px.
+    """
+    lon_min, lat_min, lon_max, lat_max = bbox
+    # ~111,320 meters per degree latitude
+    height_m = (lat_max - lat_min) * 111320
+    # meters per degree longitude scales with latitude
+    center_lat = (lat_min + lat_max) / 2.0
+    width_m = (lon_max - lon_min) * 111320 * math.cos(math.radians(center_lat))
+
+    native_w = max(int(round(width_m / 10.0)), 1)
+    native_h = max(int(round(height_m / 10.0)), 1)
+
+    if native_w <= max_px and native_h <= max_px:
+        return None
+
+    ratio = min(max_px / native_w, max_px / native_h)
+    target_w = max(int(round(native_w * ratio)), 1)
+    target_h = max(int(round(native_h * ratio)), 1)
+    return (target_h, target_w)
+
+
 def _process_single_year(
     zone_key: str,
     zone_dir: Path,
     bbox: list[float],
     year: int,
     use_network: bool,
-) -> np.ndarray:
+) -> tuple[np.ndarray, bool]:
     """
     Fetch or generate all assets for a single year within a zone.
 
-    Returns the FarmGuard class-ID mask (uint8 ndarray) for the year.
+    Returns (farmguard_mask, is_mock) tuple.
     """
     fg_mask: np.ndarray | None = None
 
     if use_network:
         try:
             is_custom = zone_key.startswith("bbox_")
-            output_size = 512 if is_custom else None
+            output_size = calculate_auto_resolution(bbox) if is_custom else None
             # 1. Fetch Sentinel-2
             tc_rgb, bands = fetch_sentinel2_true_color(bbox, year, output_size=output_size)
 
@@ -83,6 +111,7 @@ def _process_single_year(
             logger.warning("  Network fetch failed for %s/%d: %s — using mock.", zone_key, year, exc)
             fg_mask = None
 
+    is_mock = False
     # Fall back to mock if network mode produced nothing
     if fg_mask is None:
         size = 1024
@@ -91,6 +120,7 @@ def _process_single_year(
         Image.fromarray(mask_to_rgb(fg_mask)).save(zone_dir / f"mask_rgb_{year}.png")
         Image.fromarray(mask_to_true_color(fg_mask, size, year)).save(zone_dir / f"true_color_{year}.png")
         Image.fromarray(mask_to_ndvi(fg_mask, size, year)).save(zone_dir / f"ndvi_map_{year}.png")
+        is_mock = True
     else:
         # Ensure all three visual overlays exist to prevent frontend 404s when switching modes
         h, w = fg_mask.shape[:2]
@@ -99,11 +129,13 @@ def _process_single_year(
         if not tc_path.exists():
             logger.info("  True color image missing; generating mock fallback from mask")
             Image.fromarray(mask_to_true_color(fg_mask, w, year)).save(tc_path)
+            is_mock = True
         if not ndvi_path.exists():
             logger.info("  NDVI image missing; generating mock fallback from mask")
             Image.fromarray(mask_to_ndvi(fg_mask, w, year)).save(ndvi_path)
+            is_mock = True
 
-    return fg_mask
+    return fg_mask, is_mock
 
 
 def generate_zone_assets(
@@ -140,10 +172,13 @@ def generate_zone_assets(
 
     timeseries_stats: list[dict] = []
     masks_by_year: dict[int, np.ndarray] = {}
+    is_any_mock = False
 
     for yr in years:
         logger.info("Processing %s — %d…", zone_key, yr)
-        mask = _process_single_year(zone_key, zone_dir, bbox, yr, use_network)
+        mask, is_mock = _process_single_year(zone_key, zone_dir, bbox, yr, use_network)
+        if is_mock:
+            is_any_mock = True
         
         # Compute ABI + supplementary percentage stats for this year
         stats = compute_abi(mask)
@@ -181,6 +216,7 @@ def generate_zone_assets(
 
     verdict = generate_verdict(timeseries_stats, zone_key, cropland_loss_ha=loss_ha)
     verdict["encroachment"] = encroachment_stats
+    verdict["is_mock"] = is_any_mock
 
     verdict_path = zone_dir / "verdict.json"
     with open(verdict_path, "w") as fh:
