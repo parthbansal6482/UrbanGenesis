@@ -159,7 +159,7 @@ export default function MapRegionView({ zones, selectedZoneKey, onSelectZone }: 
         <defs>
           {/* Background grid pattern */}
           <pattern id="mapGrid" width="40" height="40" patternUnits="userSpaceOnUse">
-            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(51,90,130,0.12)" strokeWidth="0.6" />
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(28,25,23,0.06)" strokeWidth="0.6" />
           </pattern>
 
           {/* Glow filter for pins */}
@@ -194,10 +194,10 @@ export default function MapRegionView({ zones, selectedZoneKey, onSelectZone }: 
               <g key={`lon-${lon}`}>
                 <line
                   x1={x} y1={0} x2={x} y2={SVG_H}
-                  stroke="rgba(51,90,130,0.2)" strokeWidth="0.8" strokeDasharray="4 6"
+                  stroke="rgba(28,25,23,0.12)" strokeWidth="0.8" strokeDasharray="4 6"
                 />
                 <text x={x} y={SVG_H - 6} textAnchor="middle"
-                  fill="rgba(51,90,130,0.6)" fontSize="9" fontFamily="monospace">
+                  fill="rgba(28,25,23,0.35)" fontSize="9" fontFamily="monospace">
                   {lon}°E
                 </text>
               </g>
@@ -319,7 +319,7 @@ export default function MapRegionView({ zones, selectedZoneKey, onSelectZone }: 
                 />
 
                 {/* Inner bright dot */}
-                <circle cx={cx} cy={cy} r={isSelected ? 3 : 2} fill="#ffffff" opacity="0.9" />
+                <circle cx={cx} cy={cy} r={isSelected ? 3 : 2} fill="#fafaf9" opacity="0.9" />
 
                 {/* Label card */}
                 <g transform={`translate(${cx + 12}, ${cy - 28})`}
@@ -328,18 +328,18 @@ export default function MapRegionView({ zones, selectedZoneKey, onSelectZone }: 
                   <rect
                     x={0} y={0} width={shortName.length * 6.3 + 16} height={34}
                     rx={5}
-                    fill={isSelected ? color : "rgba(5,12,20,0.88)"}
+                    fill={isSelected ? color : "#fafaf9"}
                     stroke={color}
-                    strokeWidth="1"
+                    strokeWidth={isSelected ? "1.5" : "1"}
                   />
                   <text x={8} y={12}
-                    fill={isSelected ? "#ffffff" : colorBright}
+                    fill={isSelected ? "#ffffff" : "#1c1917"}
                     fontSize="8.5" fontFamily="monospace" fontWeight="700"
                     letterSpacing="0.04em">
                     {shortName.toUpperCase()}
                   </text>
                   <text x={8} y={26}
-                    fill={isSelected ? "rgba(255,255,255,0.8)" : "rgba(148,168,192,0.9)"}
+                    fill={isSelected ? "rgba(255,255,255,0.85)" : "#57534e"}
                     fontSize="7.5" fontFamily="monospace">
                     {zone.latest_grade}  ·  ABI {zone.latest_abi.toFixed(2)}  ·  {zone.overall_abi_change_pct > 0 ? "+" : ""}{zone.overall_abi_change_pct}%
                   </text>
@@ -379,7 +379,7 @@ export default function MapRegionView({ zones, selectedZoneKey, onSelectZone }: 
           })}
           style={{
             width: 30, height: 30, borderRadius: 6, border: "1px solid var(--border-dim)",
-            background: "rgba(5,12,20,0.9)", color: "var(--text-secondary)", fontSize: 16,
+            background: "#fafaf9", color: "var(--text-secondary)", fontSize: 16,
             cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
           }}
         >+</button>
@@ -390,7 +390,7 @@ export default function MapRegionView({ zones, selectedZoneKey, onSelectZone }: 
           })}
           style={{
             width: 30, height: 30, borderRadius: 6, border: "1px solid var(--border-dim)",
-            background: "rgba(5,12,20,0.9)", color: "var(--text-secondary)", fontSize: 16,
+            background: "#fafaf9", color: "var(--text-secondary)", fontSize: 16,
             cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
           }}
         >−</button>

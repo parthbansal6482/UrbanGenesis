@@ -29,7 +29,7 @@ function gradeColor(g: string): string {
   if (g === "D") return "#f97316";   // High Risk — orange
   if (g === "C") return "#f59e0b";   // Elevated — amber
   if (g === "B") return "#38bdf8";   // Stable Buffer — sky
-  return "#34d399";                  // Healthy (A) — emerald
+  return "#10b981";                  // Healthy (A) — emerald-500
 }
 
 export default function LeafletMap({
@@ -87,10 +87,10 @@ export default function LeafletMap({
           drawRectangleRef.current.remove();
         }
         drawRectangleRef.current = L.rectangle([startLatLng, startLatLng], {
-          color: "#34d399",
+          color: "#059669",
           weight: 2,
-          fillColor: "#34d399",
-          fillOpacity: 0.15,
+          fillColor: "#059669",
+          fillOpacity: 0.12,
         }).addTo(map);
       };
 
@@ -152,10 +152,10 @@ export default function LeafletMap({
         [drawnBbox[3], drawnBbox[2]]
       );
       drawRectangleRef.current = L.rectangle(bounds, {
-        color: "#34d399",
+        color: "#059669",
         weight: 2,
-        fillColor: "#34d399",
-        fillOpacity: 0.15,
+        fillColor: "#059669",
+        fillOpacity: 0.12,
       }).addTo(map);
       map.fitBounds(bounds, { padding: [20, 20] });
     } else if (!drawnBbox && inputMode !== "draw") {
@@ -170,7 +170,7 @@ export default function LeafletMap({
   const buildMarkerHtml = useCallback((zone: ZoneData, selected: boolean) => {
     const isHighRisk = zone.latest_grade === "F" || zone.latest_grade === "D" || zone.latest_grade === "C";
     const color = isHighRisk ? "#dc2626" : "#059669";
-    const bright = isHighRisk ? "#f87171" : "#34d399";
+    const bright = isHighRisk ? "#f87171" : "#10b981";
     const gc = gradeColor(zone.latest_grade);
     const shortName = zone.name
       .replace(" Agricultural Zone", "")
@@ -197,19 +197,21 @@ export default function LeafletMap({
                     box-shadow:0 0 ${selected ? 16 : 9}px ${color};
                     position:relative;z-index:2;">
           <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-                      width:3px;height:3px;border-radius:50%;background:#fff;opacity:0.9;"></div>
+                      width:3px;height:3px;border-radius:50%;background:#fafaf9;opacity:0.9;"></div>
         </div>
         <div style="position:absolute;left:${Math.round(sz / 2) + 6}px;top:50%;
                     transform:translateY(-50%);white-space:nowrap;
-                    background:${selected ? color : "rgba(5,12,20,0.92)"};
-                    border:1px solid ${color};border-radius:5px;
+                    background:${selected ? color : "#fafaf9"};
+                    border:1px solid ${selected ? color : "var(--border-dim)"};
+                    border-radius:5px;
+                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
                     padding:5px 9px;pointer-events:none;">
           <div style="font-size:8.5px;font-family:monospace;font-weight:800;
-                      color:${selected ? "#fff" : bright};letter-spacing:0.06em;
+                      color:${selected ? "#fff" : "var(--text-primary)"};letter-spacing:0.06em;
                       text-transform:uppercase;margin-bottom:2px;">${shortName}</div>
           <div style="font-size:7.5px;font-family:monospace;
-                      color:${selected ? "rgba(255,255,255,0.75)" : "rgba(148,168,192,0.85)"};">
-            <span style="background:${gc}22;color:${gc};border:1px solid ${gc}55;
+                      color:${selected ? "rgba(255,255,255,0.8)" : "var(--text-secondary)"};">
+            <span style="background:${gc}15;color:${gc};border:1px solid ${gc}44;
                          border-radius:3px;padding:0 4px;margin-right:4px;font-weight:700;">
               ${zone.latest_grade}</span>
             ABI&nbsp;${zone.latest_abi.toFixed(2)}&nbsp;·&nbsp;${pctStr}
@@ -269,13 +271,13 @@ export default function LeafletMap({
         attributionControl: false,
       });
 
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
         subdomains: "abcd",
         maxZoom: 19,
       }).addTo(map);
 
       L.control.attribution({ position: "bottomright", prefix: false })
-        .addAttribution('© <a href="https://carto.com" style="color:#34d399">CARTO</a> · <a href="https://openstreetmap.org" style="color:#34d399">OSM</a>')
+        .addAttribution('© <a href="https://carto.com" style="color:var(--emerald-500)">CARTO</a> · <a href="https://openstreetmap.org" style="color:var(--emerald-500)">OSM</a>')
         .addTo(map);
 
       L.control.zoom({ position: "topright" }).addTo(map);
