@@ -112,7 +112,7 @@ Configure these settings inside the root `.env` file:
   ```
 
 ### C. Run Custom Bounding Box Analysis
-Runs on-demand ETL ingestion, LULC class conversion, Agricultural Buffer Index computation, and U-Net 2025 forecasting for any custom geographic bounding box.
+Runs on-demand ETL ingestion, LULC class conversion, and Agricultural Buffer Index computation for any custom geographic bounding box.
 
 * **URL**: `/api/analyse_bbox`
 * **Method**: `POST`
@@ -120,27 +120,41 @@ Runs on-demand ETL ingestion, LULC class conversion, Agricultural Buffer Index c
 * **Request Body**:
   ```json
   {
-    "bbox": [73.72, 20.05, 73.98, 20.25],
-    "name": "Custom Region Name",
-    "before": 2017,
-    "after": 2023,
-    "mock": false
+    "min_lon": 73.72,
+    "min_lat": 20.05,
+    "max_lon": 73.98,
+    "max_lat": 20.25,
+    "years": [2017, 2019, 2021, 2023],
+    "force_refresh": false
   }
   ```
-  * `bbox` (array of floats, Required): Bounding box coordinates in `[min_lon, min_lat, max_lon, max_lat]` order (WGS84). BBox width and height must not exceed `0.45` degrees (~50km x 50km).
-  * `name` (str, Optional): Custom display name for the region.
-  * `before` (int, Optional): Starting comparison year. Defaults to `2017`.
-  * `after` (int, Optional): Ending comparison year. Defaults to `2023`.
-  * `mock` (bool, Optional): Set to `true` to force using local synthetic mocks for the bounding box bounds instead of STAC/Sentinel-2 network queries.
-* **Response**: Returns a JSON payload with the identical schema as `/api/analyse`, except overlay paths point to `/static_custom/{cache_key}/{filename}`.
-* **Caching**: Results are deterministically cached under `demo/custom_cache/{cache_key}/` to eliminate redundant remote data fetches on subsequent requests.
+  * `min_lon` / `min_lat` / `max_lon` / `max_lat` (float, Required): Bounding box coordinates in WGS84. BBox area must not exceed `0.25` deg² (~50km x 50km).
+  * `years` (list of integers, Optional): Custom timeline years list.
+  * `force_refresh` (bool, Optional): Set to `true` to force bypass backend cache and regenerate Sentinel-2/LULC layers.
+* **Response**: Returns a JSON payload with the schema of `/api/analyse` (including `"is_mock": true/false`), except overlay paths point to `/static_custom/{cache_key}/{filename}`.
+* **Caching**: Results are cached under `demo/custom_cache/{cache_key}/`.
 
-### D. Fetch Custom Region Static Overlay
+### D. Delete Custom Bbox Cache
+Deletes precomputed disk assets and cache folder for a custom bounding box.
+
+* **URL**: `/api/analyse_bbox/{cache_key}`
+* **Method**: `DELETE`
+* **Parameters**:
+  - `cache_key` (str, Required): Key of custom region to delete (must start with `bbox_` prefix).
+* **Response**:
+  ```json
+  {
+    "status": "success",
+    "message": "Successfully deleted custom data for bbox_73.72_20.05_73.98_20.25"
+  }
+  ```
+
+### E. Fetch Custom Region Static Overlay
 * **URL**: `/static_custom/{cache_key}/{filename}`
 * **Method**: `GET`
 * **Parameters**:
-  - `cache_key` (str, Required): MD5 hash representing the custom region coordinate parameters.
-  - `filename` (str, Required): Name of the generated asset file (e.g. `true_color_2023.png`, `ndvi_map_2023.png`, `mask_rgb_2023.png`, `encroachment_heatmap.png`, `forecast_mask_rgb_2025.png`).
+  - `cache_key` (str, Required): Coordinate parameter representation grid key.
+  - `filename` (str, Required): Name of generated asset file (e.g. `true_color_2023.png`, `ndvi_map_2023.png`, `mask_rgb_2023.png`, `encroachment_heatmap.png`).
 * **Response**: Binary image data stream (`image/png`).
 
 ---

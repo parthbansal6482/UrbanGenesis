@@ -31,7 +31,7 @@ UrbanGenesis/
 │   ├── dependencies.py          # load_zone_verdict() (LRU-cached), get_zones_config()
 │   └── routes/
 │       ├── zones.py             # GET /api/zones (supports format=object query)
-│       └── analyse.py           # GET /api/analyse, POST /api/analyse_bbox, GET /static_custom/...
+│       └── analyse.py           # GET /api/analyse, POST /api/analyse_bbox, DELETE /api/analyse_bbox/{cache_key}, GET /static_custom/...
 │
 ├── pipeline/                    # ETL / data acquisition layer
 │   ├── stac_client.py           # create_stac_client() — authenticated STAC client factory
@@ -126,7 +126,8 @@ Pure computation — no file I/O, no HTTP, no FarmGuard-internal imports.
 - **`routes/zones.py`**: `GET /api/zones` — returns all zones with summary metrics. `Cache-Control: public, max-age=300`. Supports a `format=object` query parameter to return zones as a keyed dictionary.
 - **`routes/analyse.py`**:
   - `GET /api/analyse`: Full zone analysis with dynamic encroachment heatmap generation, year-range comparison, transitions, and overlay URLs.
-  - `POST /api/analyse_bbox`: Runs dynamic analysis for custom bounding boxes on-demand. Validates the box, runs `custom_region_pipeline`, and returns a standardized payload matching `/api/analyse`.
+  - `POST /api/analyse_bbox`: Runs dynamic analysis for custom bounding boxes on-demand. Validates the box, runs `custom_region_pipeline`, and returns a standardized payload matching `/api/analyse` (including `"is_mock": true/false`).
+  - `DELETE /api/analyse_bbox/{cache_key}`: Deletes precomputed custom comparison assets and cached data folders from the backend.
   - `GET /static_custom/{cache_key}/{filename}`: Dynamically serves cached PNG assets (True Color, LULC masks, NDVI maps, change heatmaps) generated for custom bounding boxes.
 
 ### 5. Next.js 16 Dashboard (`dashboard/`)

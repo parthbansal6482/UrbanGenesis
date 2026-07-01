@@ -1,51 +1,78 @@
-# Design
+# Design System: FarmGuard — Satyukt Satellite Surveillance Dashboard
 
-## Overview
-A clean, structured modern dark-theme dashboard designed for agriculture analysts and risk underwriters. It highlights native 10m satellite imagery, land cover changes, and encroachment warning alerts.
+## 1. Visual Theme & Atmosphere
 
-## Colors
-- **Primary Accent**: `#10b981` (Emerald 500) — used for primary action buttons, active states, and stable indicators.
-- **Encroachment Alert**: `#ef4444` (Red 500) — used for critical encroachment alerts and warning badges.
-- **Warning Accent**: `#f59e0b` (Amber 500) — used for cropland visualization and warning status.
-- **Neutral Background**: `#090a0f` — main application background.
-- **Neutral Surface**: `#0f1016` — panel elements and base containers.
-- **Neutral Card**: `#15171f` — card backgrounds and list elements.
-- **Neutral Border**: `rgba(255, 255, 255, 0.07)` — crisp dividers and borders.
-- **Text Primary**: `#f1f5f9` (Slate 100) — main headings and body text.
-- **Text Secondary**: `#94a3b8` (Slate 400) — supporting text and metrics.
-- **Text Muted**: `#64748b` (Slate 500) — captions and helper labels.
+A precision instrument dashboard — dense, clinical, and quietly confident. Warm off-white surfaces, dark stone text, and a single emerald accent signaling healthy agricultural zones. Density **7/10** — every pixel carries data. Motion **4/10** — only status pulses and spring-physics reveals. Variance **6/10** — left-heavy split layout.
 
-## Typography
-- **Font Family**: `ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif` for both display and body copy to ensure high readability and consistency.
-- **Font Sizes**:
-  - Title: `1.0625rem` (17px)
-  - Subheaders: `0.8125rem` (13px)
-  - Body: `0.75rem` (12px)
-  - Label: `0.625rem` (10px) / `0.5625rem` (9px)
+Core rule: **data speaks, UI stays out of the way**.
 
-## Elevation
-- **Flat Surface**: `border: 1px solid rgba(255, 255, 255, 0.07)` with zero shadow for general structure. No glowing wide-blur shadows are allowed.
+---
 
-## Components
-- **Primary Button**: `#059669` background, `#FFFFFF` text, `border-radius: 8px`, `padding: 10px 20px`, active hover state `#047857`.
-- **Panel Card**: `#15171f` background, `border-radius: 12px`, `border: 1px solid rgba(255, 255, 255, 0.07)`, `padding: 20px`.
-- **Form Inputs**: Coordinate entry boxes with clear placeholder labels, border color transitions (neutral `rgba(255, 255, 255, 0.07)` to active Emerald `#10b981`), and compact descriptive helper text.
-- **Status Badge**:
-  - Critical: background `rgba(239, 68, 68, 0.08)`, text `#f87171`, border `rgba(220, 38, 38, 0.3)`.
-  - Stable: background `rgba(16, 185, 129, 0.08)`, text `#34d399`, border `rgba(5, 150, 105, 0.3)`.
-  - Neutral: background `rgba(255, 255, 255, 0.05)`, text `#94a3b8`, border `rgba(255, 255, 255, 0.07)`.
+## 2. Color Palette & Roles
 
-## Do's and Don'ts
-### Do's
-- Do use solid colors for buttons and typography.
-- Do use subtle micro-animations (e.g. lift-up hover) to indicate interactivity.
-- Do keep card corners crisp with `border-radius: 12px`.
-- Do ensure text contrast ratio is above 4.5:1.
+### Background Hierarchy
+- **Warm Floor** (`#f5f5f4`) — Stone-100. Page base.
+- **Panel Surface** (`#fafaf9`) — Stone-50. Sidebar, right panel.
+- **Card Face** (`#ffffff`) — Pure white. Glass-cards, metric-cards.
+- **Card Hover** (`#f4f4f5`) — Zinc-100. Interactive card hover.
+- **Glass Overlay** (`rgba(250,250,249,0.88)`) — Frosted overlays, header, floating pills.
 
-### Don'ts
-- Don't use gradient text or gradient backgrounds on buttons.
-- Don't pair 1px borders with heavy blur shadows.
-- Don't use display fonts for labels.
-- Don't use saturated cream/beige default backgrounds.
-- Don't use decorative animated lines (e.g., scanning lines) or scanline overlays.
-- Don't use linear-gradient area chart fills; use flat, low-opacity fills.
+### Text Hierarchy
+- **Ink** (`#1c1917`) — Stone-900. Primary text. Never `#000000`.
+- **Slate** (`#57534e`) — Stone-600. Secondary text, descriptions.
+- **Mist** (`#78716c`) — Stone-500. Muted metadata, axis labels.
+- **Ghost** (`#a8a29e`) — Stone-400. Placeholders, disabled.
+
+### Borders
+- **Whisper** (`rgba(28,25,23,0.09)`) — Default borders. Warm, not cool.
+- **Defined** (`rgba(28,25,23,0.18)`) — Hover/focus borders.
+- **Active** (`#047857`) — Selected zones, focus rings.
+
+### Accent — Emerald (Single Accent Only)
+- **Emerald Active** (`#047857`) — Active tab fills, focus rings. HIGH contrast on white.
+- **Emerald Standard** (`#059669`) — CTAs, positive data lines, zone outlines.
+- **Emerald Bright** (`#10b981`) — "Healthy" grade badges, chart lines.
+- **Emerald Dim** (`rgba(5,150,105,0.08)`) — Tinted card backgrounds.
+
+### Semantic Status Colors
+- **Alert Red** (`#dc2626`) — Critical alerts, grade F/D.
+- **Warning Amber** (`#d97706`) — Grade C, warnings.
+- **Data Sky** (`#0284c7`) — Built-up area chart data series.
+
+### BANNED Colors
+- `rgba(5,12,20,...)` — Dark navy. **Completely banned.**
+- `rgba(51,90,130,...)` — Muted blue-grey. **Completely banned.**
+- `#34d399` — Neon emerald. Too bright for light theme. Use `#059669`.
+- `#050c14`, `#0d1826` — Dark backgrounds. **Banned.**
+- Neon glow box-shadows. **Banned.**
+
+---
+
+## 3. Typography Rules
+
+- **Data Numbers:** `Geist Mono` — metrics, grades, coordinates, timestamps.
+- **UI Labels:** `Geist Sans` — section labels, tab buttons.
+- **Scale:** Labels `9px/0.12em`. Body `11–13px`. Metrics `18–28px` Geist Mono.
+- **BANNED:** `Inter` for premium contexts. Serifs always banned in dashboards.
+
+---
+
+## 4. Component Stylings
+
+- **Tab Buttons:** Active: `#047857` fill, white text. Inactive: Stone-500. Hover: Stone-900 5% alpha.
+- **Glass Cards:** `#ffffff` fill, `rgba(28,25,23,0.09)` border, `border-radius: 12px`.
+- **Grade Badges:** 40×40px square, monospace bold, colored border and tinted background.
+- **Inputs/Selects:** White background, whisper border, emerald focus ring.
+- **Loading:** Skeletal shimmer `#f4f4f5`. Radar animation for satellite load screen.
+
+---
+
+## 5. Anti-Patterns (Banned)
+
+- `rgba(5,12,20,...)` dark navy — **Zero tolerance.**
+- `rgba(51,90,130,...)` blue-grey — **Zero tolerance.**
+- `#34d399` neon emerald on light backgrounds — use `#059669`.
+- Neon glow box-shadows.
+- Pure `#000000` — use `#1c1917`.
+- Overlapping elements without clear spatial separation.
+- Fabricated metrics/statistics as placeholders.
