@@ -64,6 +64,7 @@ interface TimeseriesRecord {
 }
 
 interface AnalysisResponse {
+  is_mock?: boolean;
   zone_info: {
     key: string;
     name: string;
@@ -358,6 +359,17 @@ const saveCustomZone = (zone: ZoneData) => {
   }
 };
 
+const deleteStoredCustomZone = (key: string) => {
+  if (typeof window === "undefined") return;
+  try {
+    const existing = getStoredCustomZones();
+    const updated = existing.filter(z => z.key !== key);
+    localStorage.setItem("farmguard_custom_zones", JSON.stringify(updated));
+  } catch (e) {
+    console.error("Failed to delete custom zone from localStorage:", e);
+  }
+};
+
 const getBboxPhysicalArea = (minLon: number, minLat: number, maxLon: number, maxLat: number): string => {
   const avgLat = (minLat + maxLat) / 2;
   const latRad = (avgLat * Math.PI) / 180;
@@ -623,6 +635,49 @@ export default function Home() {
     setInputMode("named");
   };
 
+  const handleDeleteCustomZone = (key: string) => {
+    if (!key || !key.startsWith("bbox_")) return;
+
+    if (!window.confirm("Are you sure you want to completely delete the data and cache for this custom region?")) {
+      return;
+    }
+
+    setLoadingAnalysis(true);
+
+    fetch(`${API_ORIGIN}/api/analyse_bbox/${key}`, {
+      method: "DELETE",
+    })
+      .then(res => {
+        if (!res.ok) throw new Error("Failed to delete custom region data on backend");
+        return res.json();
+      })
+      .then(() => {
+        deleteStoredCustomZone(key);
+        setZones(prev => {
+          const updated = prev.filter(z => z.key !== key);
+          if (updated.length > 0) {
+            const nextZone = updated[0];
+            setSelectedZoneKey(nextZone.key);
+            setBeforeYear(nextZone.years[0]);
+            setAfterYear(nextZone.years[nextZone.years.length - 1]);
+          } else {
+            setSelectedZoneKey(null);
+          }
+          return updated;
+        });
+        setAnalysis(null);
+        setAnalysisError(null);
+        setCustomBbox(null);
+      })
+      .catch(err => {
+        console.error("Failed to delete custom zone:", err);
+        alert(`Error deleting custom region: ${err.message || err}`);
+      })
+      .finally(() => {
+        setLoadingAnalysis(false);
+      });
+  };
+
 
 
   const getOverlayUrl = (which: "before" | "after") => {
@@ -864,6 +919,7 @@ export default function Home() {
                 sliderValue={sliderValue}
                 onSliderChange={setSliderValue}
                 showSlider={vizMode !== "Infrastructure Encroachment Heatmap"}
+                isMock={analysis?.is_mock || false}
               />
             )}
           </div>
@@ -931,7 +987,7 @@ export default function Home() {
                     </p>
                   </div>
                 ) : (
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <select id="zone-select" value={selectedZoneKey || ""}
                       onChange={e => handleSelectZone(e.target.value)}
                       style={{ flex: 1 }}>
@@ -939,45 +995,93 @@ export default function Home() {
                       {zones.map(z => <option key={z.key} value={z.key}>{z.name}</option>)}
                     </select>
                     {selectedZoneKey && selectedZoneKey.startsWith("bbox_") && (
-                      <button
-                        title="Re-analyze this custom bounding box"
-                        disabled={loadingAnalysis}
-                        onClick={() => {
-                          setLoadingAnalysis(true);
-                          forceRefreshRef.current = true;
-                          setRefreshTrigger(prev => prev + 1);
-                        }}
-                        style={{
-                          background: "var(--emerald-dim)",
-                          border: "1px solid var(--border-active)",
-                          borderRadius: 8,
-                          padding: "8px 12px",
-                          color: "var(--emerald-400)",
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          opacity: loadingAnalysis ? 0.5 : 1,
-                          height: 35,
-                          width: 38,
-                          flexShrink: 0,
-                          transition: "all 0.15s ease",
-                        }}
-                      >
-                        {loadingAnalysis ? (
-                          <div style={{
-                            width: 14, height: 14, borderRadius: "50%",
-                            border: "1.5px solid var(--border-dim)",
-                            borderTopColor: "var(--emerald-400)",
-                            animation: "spin 0.8s linear infinite"
-                          }} />
-                        ) : (
+                      <>
+                        <button
+                          title="Re-analyze this custom bounding box"
+                          disabled={loadingAnalysis}
+                          onClick={() => {
+                            setLoadingAnalysis(true);
+                            forceRefreshRef.current = true;
+                            setRefreshTrigger(prev => prev + 1);
+                          }}
+                          style={{
+                            background: "var(--emerald-dim)",
+                            border: "1px solid var(--border-active)",
+                            borderRadius: 8,
+                            padding: "8px 10px",
+                            color: "var(--emerald-400)",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            opacity: loadingAnalysis ? 0.5 : 1,
+                            height: 35,
+                            width: 36,
+                            flexShrink: 0,
+                            transition: "all 0.15s ease",
+                          }}
+                        >
+                          {loadingAnalysis ? (
+                            <div style={{
+                              width: 14, height: 14, borderRadius: "50%",
+                              border: "1.5px solid var(--border-dim)",
+                              borderTopColor: "var(--emerald-400)",
+                              animation: "spin 0.8s linear infinite"
+                            }} />
+                          ) : (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+                            </svg>
+                          )}
+                        </button>
+                        <button
+                          title="Delete this custom bounding box data"
+                          disabled={loadingAnalysis}
+                          onClick={() => handleDeleteCustomZone(selectedZoneKey)}
+                          style={{
+                            background: "rgba(220, 38, 38, 0.05)",
+                            border: "1px solid rgba(220, 38, 38, 0.22)",
+                            borderRadius: 8,
+                            padding: "8px 10px",
+                            color: "var(--red-400)",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            opacity: loadingAnalysis ? 0.5 : 1,
+                            height: 35,
+                            width: 36,
+                            flexShrink: 0,
+                            transition: "all 0.15s ease",
+                          }}
+                        >
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            <line x1="10" y1="11" x2="10" y2="17" />
+                            <line x1="14" y1="11" x2="14" y2="17" />
                           </svg>
-                        )}
-                      </button>
+                        </button>
+                      </>
                     )}
+                  </div>
+                )}
+
+                {analysis?.is_mock && (
+                  <div className="glass-card animate-pulse" style={{
+                    marginTop: 8,
+                    padding: "8px 12px",
+                    border: "1px solid rgba(217, 119, 6, 0.25)",
+                    background: "rgba(217, 119, 6, 0.05)",
+                    borderRadius: 8,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}>
+                    <span className="dot-pulse amber" style={{ width: 8, height: 8 }} />
+                    <span style={{ fontSize: 10, color: "#b45309", fontWeight: 700, fontFamily: "monospace", letterSpacing: "0.02em" }}>
+                      SIMULATED DATA ACTIVE
+                    </span>
                   </div>
                 )}
               </div>

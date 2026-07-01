@@ -226,7 +226,10 @@ def analyse_zone(
     bbox = zone_cfg.get("bbox", [0.0, 0.0, 0.0, 0.0])
     center = [(bbox[1] + bbox[3]) / 2, (bbox[0] + bbox[2]) / 2]
 
+    is_mock = verdict.get("is_mock", False) or "simulation placeholder" in verdict.get("description", "").lower()
+
     return {
+        "is_mock": is_mock,
         "zone_info": {
             "key": zone,
             "name": zone_cfg.get("name", zone),
@@ -327,7 +330,10 @@ def analyse_bbox(request: BBoxAnalyseRequest):
 
         encroachment_stats = verdict.get("encroachment", {"total_cropland_lost_ha": 0.0, "total_water_lost_ha": 0.0})
 
+        is_mock = verdict.get("is_mock", False)
+
         return {
+            "is_mock": is_mock,
             "zone_info": {
                 "key": cache_key,
                 "name": f"Custom Region ({bbox[0]:.3f}, {bbox[1]:.3f})",
@@ -382,3 +388,32 @@ def serve_custom_file(cache_key: str, filename: str):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(file_path)
+
+
+@router.delete("/api/analyse_bbox/{cache_key}")
+def delete_custom_bbox(cache_key: str):
+    """
+    Delete the precomputed disk assets for a custom bounding box.
+    Restricted only to keys starting with 'bbox_' to protect precomputed system zones.
+    """
+    import shutil
+
+    # Security check: prevent directory traversal and enforce custom prefix
+    clean_key = cache_key.replace("/", "").replace("\\", "").replace("..", "")
+    if not clean_key.startswith("bbox_"):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete named system zones. Only custom regions are supported."
+        )
+
+    cache_dir = CUSTOM_REGION_CACHE_DIR / clean_key
+    if cache_dir.exists():
+        try:
+            shutil.rmtree(cache_dir)
+            logger.info("Successfully deleted custom region directory: %s", cache_dir)
+            return {"status": "success", "message": f"Successfully deleted custom data for {cache_key}"}
+        except Exception as e:
+            logger.error("Failed to delete directory %s: %s", cache_dir, e)
+            raise HTTPException(status_code=500, detail=f"Failed to delete directory: {str(e)}")
+    else:
+        return {"status": "success", "message": "Custom data already removed or does not exist."}
