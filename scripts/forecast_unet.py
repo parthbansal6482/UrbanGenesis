@@ -26,8 +26,8 @@ from analytics.grader import generate_verdict
 from core.class_map import CLASS_COLORS
 from core.config import CONFIG_PATH, PRECOMPUTED_DIR
 from core.image_utils import mask_to_rgb, rgb_to_mask
-from core.unet_dataset import GlobalPatchDataset
-from core.unet_model import UNet
+from core.unet_dataset import GlobalPatchDataset, compute_distance_transforms
+from core.unet_model import UNet, ResNet34UNet
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("forecast_unet")
@@ -43,9 +43,24 @@ ALLOWED_TRANSITIONS = np.array([
 ], dtype=bool)
 
 
+def load_model_from_checkpoint(checkpoint_path: Path, device: torch.device) -> torch.nn.Module:
+    """Auto-detect model type from state_dict keys and load weights."""
+    state_dict = torch.load(checkpoint_path, map_location=device)
+    is_resnet = "input_projection.weight" in state_dict
+    if is_resnet:
+        logger.info("Auto-detected ResNet34UNet checkpoint.")
+        model = ResNet34UNet(in_channels=22, out_channels=6, pretrained=False).to(device)
+    else:
+        logger.info("Auto-detected standard UNet checkpoint.")
+        model = UNet(in_channels=22, out_channels=6).to(device)
+    model.load_state_dict(state_dict)
+    model.eval()
+    return model
+
+
 def forecast_zone(
     zone_key: str,
-    model: UNet = None,
+    model: torch.nn.Module = None,
     device: torch.device = None,
     batch_size: int = 8,
     num_workers: int = 0,
@@ -61,10 +76,11 @@ def forecast_zone(
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if model is None:
-        model = UNet(in_channels=22, out_channels=6).to(device)
         if checkpoint_path and Path(checkpoint_path).exists():
-            model.load_state_dict(torch.load(checkpoint_path, map_location=device))
-        model.eval()
+            model = load_model_from_checkpoint(Path(checkpoint_path), device)
+        else:
+            model = UNet(in_channels=22, out_channels=6).to(device)
+            model.eval()
 
     forecast_years = list(range(start_year + 2, target_year + 1, 2))
     if zone_dir is None:
@@ -80,46 +96,90 @@ def forecast_zone(
     h, w = masks[historical_years[0]].shape
 
     for target_yr in forecast_years:
+        logger.info(f"--- Processing Year {target_yr} ---")
         y_prev = target_yr - 2
         y_prev2 = target_yr - 4
 
-        # Forecast dataset for single target year
-        forecast_dataset = GlobalPatchDataset([zone_key], y_prev2, y_prev, None, patch_size=128, augment=False)
-        forecast_loader = DataLoader(
-            forecast_dataset,
-            batch_size=batch_size,
-            shuffle=False,
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-        )
+        mask_prev = masks[y_prev]
+        mask_prev2 = masks[y_prev2]
 
-        h_crop = forecast_dataset.h_patches * 128
-        w_crop = forecast_dataset.w_patches * 128
-        forecast_mask = np.zeros((h_crop, w_crop), dtype=np.uint8)
+        h, w = mask_prev.shape
+        patch_size = 128
+        pad_h = (patch_size - (h % patch_size)) % patch_size
+        pad_w = (patch_size - (w % patch_size)) % patch_size
 
-        patch_idx = 0
+        # 1. Pad masks to multiples of patch_size
+        mask_prev_padded = np.pad(mask_prev, ((0, pad_h), (0, pad_w)), mode="edge")
+        mask_prev2_padded = np.pad(mask_prev2, ((0, pad_h), (0, pad_w)), mode="edge")
+
+        # 2. Compute spatial distance features on padded masks
+        logger.info(f"  [{target_yr}] Calculating Euclidean Distance Transforms (EDT) on CPU...")
+        dist_prev = compute_distance_transforms(mask_prev_padded)
+        dist_prev2 = compute_distance_transforms(mask_prev2_padded)
+
+        # 3. Create one-hot representations
+        prev_oh = np.eye(6)[mask_prev_padded].transpose(2, 0, 1).astype(np.float32)
+        prev2_oh = np.eye(6)[mask_prev2_padded].transpose(2, 0, 1).astype(np.float32)
+
+        dist_feat_prev = dist_prev.transpose(2, 0, 1)
+        dist_diff = (dist_prev - dist_prev2).transpose(2, 0, 1)
+
+        # 4. Concatenate into full 22-channel feature tensor
+        X = np.concatenate([prev2_oh, prev_oh, dist_feat_prev, dist_diff], axis=0) # shape (22, H_pad, W_pad)
+
+        # 5. Set up sliding window blending variables
+        sum_logits = torch.zeros((6, h + pad_h, w + pad_w), device=device, dtype=torch.float32)
+        weight_map = torch.zeros((h + pad_h, w + pad_w), device=device, dtype=torch.float32)
+
+        # 2D Cosine window weight: peaks at 1.0 in center, approaches 0.0 at borders
+        w_1d = np.sin(np.pi * (np.arange(128) + 0.5) / 128).astype(np.float32)
+        W_window = torch.tensor(np.outer(w_1d, w_1d), device=device, dtype=torch.float32) # (128, 128)
+
+        # Convert the full feature canvas to a GPU tensor to perform slicing directly on the GPU
+        logger.info(f"  [{target_yr}] Uploading to GPU and running batched forward pass...")
+        X_gpu = torch.tensor(X, device=device, dtype=torch.float32)
+
+        stride = 64  # 50% overlap for blending
+        coords_list = []
+
+        for y in range(0, h + pad_h - 127, stride):
+            for x in range(0, w + pad_w - 127, stride):
+                coords_list.append((y, x))
+
+        # Run forward pass in sub-batches of 64 (memory footprint is tiny with GPU slicing)
+        inf_batch_size = 64
         with torch.no_grad():
-            for X_batch, prev_batch in forecast_loader:
-                X_batch, prev_batch = X_batch.to(device), prev_batch.to(device)
+            for i in range(0, len(coords_list), inf_batch_size):
+                batch_coords = coords_list[i : i + inf_batch_size]
+                
+                # Slice directly on the GPU (instantaneous, zero host-to-device memory copies)
+                batch_patches = [X_gpu[:, y : y + 128, x : x + 128] for y, x in batch_coords]
+                batch_x = torch.stack(batch_patches, dim=0) # (SubBatch, 22, 128, 128)
+                
                 with torch.amp.autocast("cuda", enabled=use_amp):
-                    outputs = model(X_batch)
-                    # Apply transition constraints by masking logits
-                    allowed_tensor = torch.tensor(ALLOWED_TRANSITIONS, device=device, dtype=torch.bool)
-                    mask = allowed_tensor[prev_batch].permute(0, 3, 1, 2)
-                    outputs_masked = outputs.clone()
-                    outputs_masked[~mask] = -1e9
-                    preds = torch.argmax(outputs_masked, dim=1).cpu().numpy()
+                    batch_logits = model(batch_x) # (SubBatch, 6, 128, 128)
+                
+                # Accumulate the predictions back to the global logits canvas immediately
+                for idx, (y, x) in enumerate(batch_coords):
+                    logits = batch_logits[idx]
+                    sum_logits[:, y : y + 128, x : x + 128] += logits * W_window
+                    weight_map[y : y + 128, x : x + 128] += W_window
 
-                for b in range(preds.shape[0]):
-                    py = patch_idx // forecast_dataset.w_patches
-                    px = patch_idx % forecast_dataset.w_patches
-                    y = py * 128
-                    x = px * 128
-                    forecast_mask[y : y + 128, x : x + 128] = preds[b]
-                    patch_idx += 1
+        # Normalize logits by weights
+        sum_logits = sum_logits / (weight_map + 1e-5)
+
+        # 6. Apply allowed transition constraints to the final blended logits
+        prev_tensor = torch.tensor(mask_prev_padded, device=device, dtype=torch.long)
+        allowed_tensor = torch.tensor(ALLOWED_TRANSITIONS, device=device, dtype=torch.bool)
+        allowed_mask = allowed_tensor[prev_tensor].permute(2, 0, 1) # (6, H_pad, W_pad)
+
+        sum_logits[~allowed_mask] = -1e9
+        
+        # Take argmax to get predicted classes
+        forecast_mask_padded = torch.argmax(sum_logits, dim=0).cpu().numpy().astype(np.uint8)
 
         # Crop back to original dimensions
-        full_forecast_mask = forecast_mask[:h, :w]
+        full_forecast_mask = forecast_mask_padded[:h, :w]
 
         # Apply building persistence constraint
         prev_mask = masks[y_prev]
@@ -134,6 +194,11 @@ def forecast_zone(
             output_path = zone_dir / f"mask_rgb_{target_yr}.png"
             Image.fromarray(forecast_rgb).save(output_path)
             logger.info(f"  Saved U-Net forecasted mask for {target_yr}: {output_path.name}")
+
+        # Explicitly clean up GPU memory to prevent VRAM accumulation and watchdog kills across recursive years
+        del X_gpu, sum_logits, weight_map, allowed_mask, prev_tensor
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
 
     if target_year <= 2023:
         return masks[target_year]
@@ -203,16 +268,14 @@ def main() -> None:
         zone_keys = sorted(list(all_zones.keys()))
 
     # Build model and load weights
-    model = UNet(in_channels=22, out_channels=6).to(device)
     load_path = Path(args.load_path)
     if not load_path.exists():
         logger.error(f"Trained checkpoint weights file not found at: {load_path}")
         logger.error("Please run the training script first: python scripts/train_unet.py")
         sys.exit(1)
 
-    model.load_state_dict(torch.load(load_path, map_location=device))
-    model.eval()
-    logger.info(f"Loaded trained U-Net model checkpoint from: {load_path}")
+    model = load_model_from_checkpoint(load_path, device)
+    logger.info(f"Loaded trained model checkpoint from: {load_path}")
 
     # Set parameters depending on hardware/cli arguments
     cpu_cores = os.cpu_count() or 2
