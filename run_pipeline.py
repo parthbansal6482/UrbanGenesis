@@ -101,9 +101,10 @@ def main() -> None:
     for zone_key, zone_cfg in zones.items():
         bbox = zone_cfg.get("bbox")
         years = zone_cfg.get("years", [2017, 2019, 2021, 2023])
-        if args.forecast:
-            # Restrict ETL to historical baseline years needed by U-Net
-            years = [y for y in years if y <= 2023]
+        # Data ingestion pipeline only fetches historical years (<= 2023);
+        # future years are generated recursively by the forecast script.
+        years = [y for y in years if y <= 2023]
+        
         logger.info("\n%s", "=" * 60)
         logger.info(
             "Zone: %s  |  BBox: %s  |  Years: %s",

@@ -55,6 +55,66 @@ _DEFAULT_ZONES: dict[str, Any] = {
         "years": [2017, 2019, 2021, 2023, 2025],
         "satyukt_relevance": "Satyukt headquarters regional cropland buffer tracker.",
     },
+    "pune_east": {
+        "name": "Pune East Tech-Cropland Zone",
+        "bbox": [73.95, 18.45, 74.20, 18.65],
+        "years": [2017, 2019, 2021, 2023, 2025],
+        "satyukt_relevance": "Sugarcane and vegetable farms next to high-growth IT hubs.",
+    },
+    "jaipur_south": {
+        "name": "Jaipur South Arid Agricultural Zone",
+        "bbox": [75.75, 26.70, 76.00, 26.90],
+        "years": [2017, 2019, 2021, 2023, 2025],
+        "satyukt_relevance": "Arid crops and shifting soils under heritage/industrial expansion.",
+    },
+    "ludhiana_rural": {
+        "name": "Ludhiana Rural Industrial Cropland",
+        "bbox": [75.70, 30.80, 75.95, 31.00],
+        "years": [2017, 2019, 2021, 2023, 2025],
+        "satyukt_relevance": "High-intensity wheat/paddy crop belt surrounding industrial sprawl.",
+    },
+    "coimbatore_north": {
+        "name": "Coimbatore North Coconut-Crop Belt",
+        "bbox": [76.90, 11.05, 77.15, 11.25],
+        "years": [2017, 2019, 2021, 2023, 2025],
+        "satyukt_relevance": "Coconut plantations and cash crops facing manufacturing growth.",
+    },
+    "patna_west": {
+        "name": "Patna West Gangetic Alluvial Farmland",
+        "bbox": [84.95, 25.55, 85.20, 25.75],
+        "years": [2017, 2019, 2021, 2023, 2025],
+        "satyukt_relevance": "Highly fertile Gangetic alluvial crop boundary.",
+    },
+    "indore_peripheral": {
+        "name": "Indore Peripheral Soybean Belt",
+        "bbox": [75.80, 22.60, 76.05, 22.80],
+        "years": [2017, 2019, 2021, 2023, 2025],
+        "satyukt_relevance": "Black soil soybean and wheat farming tracts under urban pressure.",
+    },
+    "guwahati_east": {
+        "name": "Guwahati East Riverine Crop Zone",
+        "bbox": [91.80, 26.10, 92.05, 26.30],
+        "years": [2017, 2019, 2021, 2023, 2025],
+        "satyukt_relevance": "Wetland and riverine crop regions in the Brahmaputra valley.",
+    },
+    "hyderabad_west": {
+        "name": "Hyderabad West Semi-Arid Farms",
+        "bbox": [78.15, 17.35, 78.40, 17.55],
+        "years": [2017, 2019, 2021, 2023, 2025],
+        "satyukt_relevance": "Dryland crop boundary facing aggressive IT corridor sprawl.",
+    },
+    "lucknow_outer": {
+        "name": "Lucknow Outer Orchard-Crop Belt",
+        "bbox": [80.85, 26.75, 81.10, 26.95],
+        "years": [2017, 2019, 2021, 2023, 2025],
+        "satyukt_relevance": "Traditional mango orchards and crop fields undergoing expansion.",
+    },
+    "nagpur_rural": {
+        "name": "Nagpur Rural Citrus-Cotton Belt",
+        "bbox": [78.95, 21.05, 79.20, 21.25],
+        "years": [2017, 2019, 2021, 2023, 2025],
+        "satyukt_relevance": "Central Indian cotton and orange grove agricultural buffer.",
+    },
 }
 
 
