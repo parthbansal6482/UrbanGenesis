@@ -65,6 +65,22 @@ def calculate_auto_resolution(bbox: list[float], max_px: int = 1024) -> tuple[in
     return (target_h, target_w)
 
 
+def save_sharp_image(img_arr: np.ndarray, path: Path, min_dim: int = 512, is_mask: bool = False):
+    """
+    Save a numpy image array to disk. If the image is smaller than min_dim,
+    upscale it cleanly to ensure it is sharp in the dashboard.
+    """
+    img = Image.fromarray(img_arr)
+    w, h = img.size
+    if w < min_dim or h < min_dim:
+        ratio = max(min_dim / w, min_dim / h)
+        new_w = max(int(round(w * ratio)), 1)
+        new_h = max(int(round(h * ratio)), 1)
+        resample = Image.Resampling.NEAREST if is_mask else Image.Resampling.LANCZOS
+        img = img.resize((new_w, new_h), resample=resample)
+    img.save(path)
+
+
 def _process_single_year(
     zone_key: str,
     zone_dir: Path,
@@ -89,12 +105,12 @@ def _process_single_year(
             if tc_rgb is not None:
                 h, w = tc_rgb.shape[:2]
                 logger.info("  Sentinel-2 fetched at size: %dx%d", w, h)
-                Image.fromarray(tc_rgb).save(zone_dir / f"true_color_{year}.png")
+                save_sharp_image(tc_rgb, zone_dir / f"true_color_{year}.png", is_mask=False)
 
                 if bands is not None:
                     red, green, blue, nir = bands
                     ndvi_img = generate_ndvi_map_from_bands(red, green, blue, nir)
-                    Image.fromarray(ndvi_img).save(zone_dir / f"ndvi_map_{year}.png")
+                    save_sharp_image(ndvi_img, zone_dir / f"ndvi_map_{year}.png", is_mask=False)
 
                 # 2. Fetch ESRI LC at the same shape
                 fg_mask, _ = fetch_esri_landcover_tile(bbox, year, output_shape=(h, w))
@@ -105,7 +121,7 @@ def _process_single_year(
 
             if fg_mask is not None:
                 logger.info("  ESRI Land Cover fetched for %d", year)
-                Image.fromarray(mask_to_rgb(fg_mask)).save(zone_dir / f"mask_rgb_{year}.png")
+                save_sharp_image(mask_to_rgb(fg_mask), zone_dir / f"mask_rgb_{year}.png", is_mask=True)
 
         except Exception as exc:
             logger.warning("  Network fetch failed for %s/%d: %s — using mock.", zone_key, year, exc)
@@ -117,9 +133,9 @@ def _process_single_year(
         size = 1024
         logger.info("  Generating realistic mock for %s — %d…", zone_key, year)
         fg_mask = generate_realistic_mock(zone_key, year, size)
-        Image.fromarray(mask_to_rgb(fg_mask)).save(zone_dir / f"mask_rgb_{year}.png")
-        Image.fromarray(mask_to_true_color(fg_mask, size, year)).save(zone_dir / f"true_color_{year}.png")
-        Image.fromarray(mask_to_ndvi(fg_mask, size, year)).save(zone_dir / f"ndvi_map_{year}.png")
+        save_sharp_image(mask_to_rgb(fg_mask), zone_dir / f"mask_rgb_{year}.png", is_mask=True)
+        save_sharp_image(mask_to_true_color(fg_mask, size, year), zone_dir / f"true_color_{year}.png", is_mask=False)
+        save_sharp_image(mask_to_ndvi(fg_mask, size, year), zone_dir / f"ndvi_map_{year}.png", is_mask=False)
         is_mock = True
     else:
         # Ensure all three visual overlays exist to prevent frontend 404s when switching modes
@@ -128,11 +144,11 @@ def _process_single_year(
         ndvi_path = zone_dir / f"ndvi_map_{year}.png"
         if not tc_path.exists():
             logger.info("  True color image missing; generating mock fallback from mask")
-            Image.fromarray(mask_to_true_color(fg_mask, w, year)).save(tc_path)
+            save_sharp_image(mask_to_true_color(fg_mask, w, year), tc_path, is_mask=False)
             is_mock = True
         if not ndvi_path.exists():
             logger.info("  NDVI image missing; generating mock fallback from mask")
-            Image.fromarray(mask_to_ndvi(fg_mask, w, year)).save(ndvi_path)
+            save_sharp_image(mask_to_ndvi(fg_mask, w, year), ndvi_path, is_mask=False)
             is_mock = True
 
     return fg_mask, is_mock
@@ -211,7 +227,7 @@ def generate_zone_assets(
             first_year_mask, last_year_mask, mapping_type="esri"
         )
         heatmap_path = zone_dir / "encroachment_heatmap.png"
-        Image.fromarray(heatmap_arr).save(heatmap_path)
+        save_sharp_image(heatmap_arr, heatmap_path, is_mask=True)
         logger.info("  Saved encroachment heatmap → %s", heatmap_path)
 
     verdict = generate_verdict(timeseries_stats, zone_key, cropland_loss_ha=loss_ha)

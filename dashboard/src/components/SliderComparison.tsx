@@ -201,6 +201,12 @@ export default function SliderComparison({
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     const target = e.target as HTMLElement;
+    
+    // Ignore clicks on buttons so their onClick event triggers normally
+    if (target.closest("button") !== null) {
+      return;
+    }
+
     // Check if clicked directly on slider handle or slider line
     const isHandleClick = target.closest(".slider-handle-trigger") !== null;
 
