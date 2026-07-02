@@ -51,28 +51,31 @@ class GlobalPatchDataset(Dataset):
             if not zone_dir.exists():
                 continue
 
-            # Load masks
-            mask_prev2_path = zone_dir / f"mask_rgb_{year_prev2}.png"
-            if not mask_prev2_path.exists():
-                mask_prev2_path = zone_dir / "mask_rgb_2023.png"
-            mask_prev2_rgb = np.array(Image.open(mask_prev2_path).convert("RGB"))
-            mask_prev2 = rgb_to_mask(mask_prev2_rgb)
-
+            # Load masks and enforce shape alignment to prevent ValueError shape mismatch
             mask_prev_path = zone_dir / f"mask_rgb_{year_prev}.png"
             if not mask_prev_path.exists():
                 mask_prev_path = zone_dir / "mask_rgb_2023.png"
-            mask_prev_rgb = np.array(Image.open(mask_prev_path).convert("RGB"))
-            mask_prev = rgb_to_mask(mask_prev_rgb)
+            mask_prev_img = Image.open(mask_prev_path).convert("RGB")
+            w, h = mask_prev_img.size
+            mask_prev = rgb_to_mask(np.array(mask_prev_img))
+
+            mask_prev2_path = zone_dir / f"mask_rgb_{year_prev2}.png"
+            if not mask_prev2_path.exists():
+                mask_prev2_path = zone_dir / "mask_rgb_2023.png"
+            mask_prev2_img = Image.open(mask_prev2_path).convert("RGB")
+            if mask_prev2_img.size != (w, h):
+                mask_prev2_img = mask_prev2_img.resize((w, h), Image.Resampling.NEAREST)
+            mask_prev2 = rgb_to_mask(np.array(mask_prev2_img))
 
             mask_target = None
             if year_target is not None:
                 mask_target_path = zone_dir / f"mask_rgb_{year_target}.png"
                 if not mask_target_path.exists():
                     mask_target_path = zone_dir / "mask_rgb_2023.png"
-                mask_target_rgb = np.array(Image.open(mask_target_path).convert("RGB"))
-                mask_target = rgb_to_mask(mask_target_rgb)
-
-            h, w = mask_prev.shape
+                mask_target_img = Image.open(mask_target_path).convert("RGB")
+                if mask_target_img.size != (w, h):
+                    mask_target_img = mask_target_img.resize((w, h), Image.Resampling.NEAREST)
+                mask_target = rgb_to_mask(np.array(mask_target_img))
 
             # Pad dimensions to next multiple of patch_size using edge padding
             pad_h = (patch_size - (h % patch_size)) % patch_size
