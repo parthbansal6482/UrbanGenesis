@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.config import CONFIG_PATH
 from core.unet_dataset import ChangeWeightedHybridLoss, GlobalPatchDataset, compute_class_weights
-from core.unet_model import UNet
+from core.unet_model import UNet, ResNet34UNet
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("train_unet")
@@ -40,6 +40,13 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
     parser.add_argument("--weight-decay", type=float, default=1e-4, help="Weight decay")
     parser.add_argument("--change-weight", type=float, default=3.0, help="Loss weight modifier for transition pixels")
+    parser.add_argument(
+        "--model-type",
+        type=str,
+        choices=["standard", "resnet34"],
+        default="resnet34",
+        help="UNet encoder backbone style: 'standard' or 'resnet34'"
+    )
     args = parser.parse_args()
 
     # Detect device
@@ -90,8 +97,14 @@ def main() -> None:
     class_weights = compute_class_weights(train_dataset).to(device)
     logger.info(f"Class-imbalance weights: {class_weights.cpu().numpy()}")
 
-    # Instantiate U-Net model
-    model = UNet(in_channels=22, out_channels=6).to(device)
+    # Instantiate model
+    if args.model_type == "resnet34":
+        logger.info("Initializing U-Net with pre-trained ResNet34 backbone...")
+        model = ResNet34UNet(in_channels=22, out_channels=6, pretrained=True).to(device)
+    else:
+        logger.info("Initializing standard U-Net with custom convolutions...")
+        model = UNet(in_channels=22, out_channels=6).to(device)
+    
     criterion = ChangeWeightedHybridLoss(change_weight=args.change_weight)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
