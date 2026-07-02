@@ -84,10 +84,10 @@ def get_zones(format: str = "list") -> JSONResponse:
                     "min_area_deg2": 0.0001,
                 }
             },
-            headers={"Cache-Control": "public, max-age=300"},
+            headers={"Cache-Control": "no-cache"},
         )
 
     return JSONResponse(
         content=zones_list,
-        headers={"Cache-Control": "public, max-age=300"},
+        headers={"Cache-Control": "no-cache"},
     )

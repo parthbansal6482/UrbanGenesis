@@ -696,8 +696,12 @@ export default function Home() {
       else url = ov.mask;
     }
 
-    if (url && selectedZoneKey && selectedZoneKey.startsWith("bbox_") && refreshTrigger > 0) {
-      return `${url}?t=${refreshTrigger}`;
+    if (url) {
+      // Use refreshTrigger for custom bboxes; use a model version suffix for precomputed zones to invalidate browser cache once
+      const buster = selectedZoneKey && selectedZoneKey.startsWith("bbox_") && refreshTrigger > 0
+        ? refreshTrigger
+        : "resnet34_v1";
+      return `${url}?t=${buster}`;
     }
     return url;
   };
