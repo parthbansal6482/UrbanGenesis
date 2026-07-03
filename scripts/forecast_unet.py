@@ -16,6 +16,7 @@ import numpy as np
 import torch
 import yaml
 from PIL import Image
+from scipy.ndimage import binary_dilation, label
 from torch.utils.data import DataLoader
 
 # Setup project root path
@@ -70,6 +71,8 @@ def forecast_zone(
     target_year: int = 2051,
     checkpoint_path: Path = None,
     zone_dir: Path = None,
+    temperature: float = 0.8,
+    confidence_threshold: float = 0.92,
 ) -> np.ndarray | None:
     """Run recursive spatial land-cover forecasting for a single zone."""
     if device is None:
@@ -95,7 +98,7 @@ def forecast_zone(
 
     h, w = masks[historical_years[0]].shape
 
-    for target_yr in forecast_years:
+    for step_idx, target_yr in enumerate(forecast_years):
         logger.info(f"--- Processing Year {target_yr} ---")
         y_prev = target_yr - 2
         y_prev2 = target_yr - 4
@@ -104,11 +107,11 @@ def forecast_zone(
         mask_prev2 = masks[y_prev2]
 
         h, w = mask_prev.shape
-        patch_size = 128
-        pad_h = (patch_size - (h % patch_size)) % patch_size
-        pad_w = (patch_size - (w % patch_size)) % patch_size
+        core_size = 96
+        pad_h = (core_size - (h % core_size)) % core_size
+        pad_w = (core_size - (w % core_size)) % core_size
 
-        # 1. Pad masks to multiples of patch_size
+        # 1. Pad masks to multiples of core_size (96) on bottom/right using edge padding
         mask_prev_padded = np.pad(mask_prev, ((0, pad_h), (0, pad_w)), mode="edge")
         mask_prev2_padded = np.pad(mask_prev2, ((0, pad_h), (0, pad_w)), mode="edge")
 
@@ -117,65 +120,84 @@ def forecast_zone(
         dist_prev = compute_distance_transforms(mask_prev_padded)
         dist_prev2 = compute_distance_transforms(mask_prev2_padded)
 
+        # --- URBAN PRESSURE INJECTION ---
+        # Problem: as buildings saturate the zone, dist_prev → 0 everywhere and
+        # dist_diff → 0, meaning the model sees no spatial gradient to trigger expansion.
+        # Fix: inject a small synthetic momentum into dist_diff that grows with step index,
+        # simulating continued off-screen urban pressure from roads/corridors beyond the tile.
+        # Decays as the building fraction saturates (nothing left to convert).
+        dist_diff = (dist_prev - dist_prev2).transpose(2, 0, 1)  # 5 x H x W, raw change velocity
+        bld_fraction = float((mask_prev_padded == 1).mean())
+        # Saturates gently: when bld_fraction=0.5 → factor=0.5, when bld_fraction=0.9 → factor=0.1
+        saturation_damping = max(0.0, 1.0 - bld_fraction * 1.1)
+        # Momentum grows slightly each step (max ~0.15 at step 14), damped by saturation
+        momentum_strength = min(0.01 * (step_idx + 1), 0.15) * saturation_damping
+        # Apply only to the building class (channel 0 in dist, class id 1 in mask)
+        # Negative dist_diff means buildings are getting closer → add extra negative push
+        dist_diff_boosted = dist_diff.copy()
+        dist_diff_boosted[0] = dist_diff_boosted[0] - momentum_strength
+        logger.info(
+            f"  [{target_yr}] Urban pressure momentum: {momentum_strength:.4f} "
+            f"(bld_frac={bld_fraction:.2f}, damping={saturation_damping:.2f})"
+        )
+
         # 3. Create one-hot representations
         prev_oh = np.eye(6)[mask_prev_padded].transpose(2, 0, 1).astype(np.float32)
         prev2_oh = np.eye(6)[mask_prev2_padded].transpose(2, 0, 1).astype(np.float32)
 
         dist_feat_prev = dist_prev.transpose(2, 0, 1)
-        dist_diff = (dist_prev - dist_prev2).transpose(2, 0, 1)
 
-        # 4. Concatenate into full 22-channel feature tensor
-        X = np.concatenate([prev2_oh, prev_oh, dist_feat_prev, dist_diff], axis=0) # shape (22, H_pad, W_pad)
+        # 4. Concatenate into full 22-channel feature tensor (22, H_pad, W_pad)
+        # Use the pressure-boosted dist_diff instead of the raw one
+        X = np.concatenate([prev2_oh, prev_oh, dist_feat_prev, dist_diff_boosted], axis=0)
 
-        # 5. Set up sliding window blending variables
+        # 5. Add 16 pixels of context border padding on all 4 sides of the feature canvas
+        X_padded = np.pad(X, ((0, 0), (16, 16), (16, 16)), mode="edge")
+
+        # 6. Set up logits canvas for the padded area
         sum_logits = torch.zeros((6, h + pad_h, w + pad_w), device=device, dtype=torch.float32)
-        weight_map = torch.zeros((h + pad_h, w + pad_w), device=device, dtype=torch.float32)
 
-        # 2D Cosine window weight: peaks at 1.0 in center, approaches 0.0 at borders
-        w_1d = np.sin(np.pi * (np.arange(128) + 0.5) / 128).astype(np.float32)
-        W_window = torch.tensor(np.outer(w_1d, w_1d), device=device, dtype=torch.float32) # (128, 128)
-
-        # Convert the full feature canvas to a GPU tensor to perform slicing directly on the GPU
+        # Convert the full padded feature canvas to a GPU tensor
         logger.info(f"  [{target_yr}] Uploading to GPU and running batched forward pass...")
-        X_gpu = torch.tensor(X, device=device, dtype=torch.float32)
+        X_gpu = torch.tensor(X_padded, device=device, dtype=torch.float32)
 
-        stride = 64  # 50% overlap for blending
+        stride = 96  # Side-by-side stitching of the 96px cores (no overlap, no low-pass smoothing)
         coords_list = []
 
-        for y in range(0, h + pad_h - 127, stride):
-            for x in range(0, w + pad_w - 127, stride):
+        for y in range(0, h + pad_h, stride):
+            for x in range(0, w + pad_w, stride):
                 coords_list.append((y, x))
 
-        # Run forward pass in sub-batches of 64 (memory footprint is tiny with GPU slicing)
+        # Run forward pass in sub-batches of 64
         inf_batch_size = 64
         with torch.no_grad():
             for i in range(0, len(coords_list), inf_batch_size):
                 batch_coords = coords_list[i : i + inf_batch_size]
                 
-                # Slice directly on the GPU (instantaneous, zero host-to-device memory copies)
+                # Slice the 128x128 patches from X_gpu directly (using the centered coordinates)
+                # Since X_gpu is padded by 16, a core coordinate (y, x) maps directly to slice [y : y + 128, x : x + 128]
                 batch_patches = [X_gpu[:, y : y + 128, x : x + 128] for y, x in batch_coords]
-                batch_x = torch.stack(batch_patches, dim=0) # (SubBatch, 22, 128, 128)
+                batch_x = torch.stack(batch_patches, dim=0)  # (SubBatch, 22, 128, 128)
                 
                 with torch.amp.autocast("cuda", enabled=use_amp):
-                    batch_logits = model(batch_x) # (SubBatch, 6, 128, 128)
+                    batch_logits = model(batch_x)  # (SubBatch, 6, 128, 128)
                 
-                # Accumulate the predictions back to the global logits canvas immediately
+                # Discard the outer 16-pixel border and paste the 96x96 central region directly
+                batch_logits_cropped = batch_logits[:, :, 16:112, 16:112]  # (SubBatch, 6, 96, 96)
+                
+                # Paste predictions directly (no blending window needed)
                 for idx, (y, x) in enumerate(batch_coords):
-                    logits = batch_logits[idx]
-                    sum_logits[:, y : y + 128, x : x + 128] += logits * W_window
-                    weight_map[y : y + 128, x : x + 128] += W_window
+                    logits = batch_logits_cropped[idx]
+                    sum_logits[:, y : y + 96, x : x + 96] = logits
 
-        # Normalize logits by weights
-        sum_logits = sum_logits / (weight_map + 1e-5)
-
-        # 6. Apply allowed transition constraints to the final blended logits
+        # 7. Apply allowed transition constraints
         prev_tensor = torch.tensor(mask_prev_padded, device=device, dtype=torch.long)
         allowed_tensor = torch.tensor(ALLOWED_TRANSITIONS, device=device, dtype=torch.bool)
-        allowed_mask = allowed_tensor[prev_tensor].permute(2, 0, 1) # (6, H_pad, W_pad)
+        allowed_mask = allowed_tensor[prev_tensor].permute(2, 0, 1)  # (6, H_pad, W_pad)
 
         sum_logits[~allowed_mask] = -1e9
         
-        # Take argmax to get predicted classes
+        # Deterministic argmax to get predicted classes (fully solid, no grain/speckle noise!)
         forecast_mask_padded = torch.argmax(sum_logits, dim=0).cpu().numpy().astype(np.uint8)
 
         # Crop back to original dimensions
@@ -184,6 +206,34 @@ def forecast_zone(
         # Apply building persistence constraint
         prev_mask = masks[y_prev]
         full_forecast_mask[prev_mask == 1] = 1
+
+        # --- CONTROLLED EXPANSION SEEDING ---
+        # Problem: the model's persistence bias means very few pixels at the frontier
+        # get converted each step. Over 14 recursive steps this causes apparent stagnation.
+        # Fix: after prediction, probabilistically seed a small fraction of pixels that are:
+        #   (a) adjacent to buildings, (b) currently non-building, (c) legally convertable.
+        # Seeding rate scales with saturation_damping so it naturally winds down as land runs out.
+        # Base seed rate: ~0.5% of the convertable frontier per step.
+        seed_rate = 0.005 * saturation_damping
+        if seed_rate > 0.0001:
+            building_mask = (full_forecast_mask == 1)
+            # Dilate by 1 pixel to find the immediate frontier
+            dilated = binary_dilation(building_mask, iterations=2)
+            frontier = dilated & ~building_mask
+            # Only seed legally convertable non-building classes
+            convertable = np.isin(full_forecast_mask, [2, 3, 5])  # crop, veg, soil
+            candidate_pixels = frontier & convertable
+            candidate_indices = np.argwhere(candidate_pixels)
+            n_seed = max(0, int(len(candidate_indices) * seed_rate))
+            if n_seed > 0:
+                chosen = candidate_indices[
+                    np.random.choice(len(candidate_indices), size=n_seed, replace=False)
+                ]
+                full_forecast_mask[chosen[:, 0], chosen[:, 1]] = 1
+                logger.info(
+                    f"  [{target_yr}] Expansion seeding: converted {n_seed} frontier pixels "
+                    f"to buildings (seed_rate={seed_rate:.4f}, frontier_size={len(candidate_indices)})"
+                )
 
         masks[target_yr] = full_forecast_mask
 
@@ -196,7 +246,7 @@ def forecast_zone(
             logger.info(f"  Saved U-Net forecasted mask for {target_yr}: {output_path.name}")
 
         # Explicitly clean up GPU memory to prevent VRAM accumulation and watchdog kills across recursive years
-        del X_gpu, sum_logits, weight_map, allowed_mask, prev_tensor
+        del X_gpu, sum_logits, allowed_mask, prev_tensor
         if device.type == "cuda":
             torch.cuda.empty_cache()
 
@@ -219,8 +269,8 @@ def forecast_zone(
 
     new_timeseries = sorted(new_timeseries, key=lambda x: x["year"])
 
-    # Calculate overall cropland loss 2017 -> 2051
-    loss_ha = compute_cropland_loss_ha(masks[2017], masks[2051], resolution_m=10.0)
+    # Calculate overall cropland loss 2017 -> target_year
+    loss_ha = compute_cropland_loss_ha(masks[2017], masks[target_year], resolution_m=10.0)
 
     # Generate updated verdict.json
     new_verdict = generate_verdict(new_timeseries, zone_key, cropland_loss_ha=loss_ha)
@@ -229,7 +279,7 @@ def forecast_zone(
         json.dump(new_verdict, f, indent=2)
 
     logger.info(
-        f"  2051 U-Net Verdict updated: Grade {new_verdict['grade']} (ABI={new_verdict['abi']:.3f}, Crop Loss={loss_ha:.1f} ha)"
+        f"  {target_year} U-Net Verdict updated: Grade {new_verdict['grade']} (ABI={new_verdict['abi']:.3f}, Crop Loss={loss_ha:.1f} ha)"
     )
 
 
@@ -243,6 +293,18 @@ def main() -> None:
     )
     parser.add_argument("--zone", type=str, default="all", help="Specific zone key to forecast, or 'all'")
     parser.add_argument("--batch-size", type=int, default=None, help="Batch size")
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.8,
+        help="Temperature for stochastic sampling (lower is smoother/more deterministic, higher is rougher)",
+    )
+    parser.add_argument(
+        "--confidence-threshold",
+        type=float,
+        default=0.92,
+        help="Confidence threshold above which to use deterministic argmax (default: 0.92)",
+    )
     args = parser.parse_args()
 
     # Detect device
@@ -325,7 +387,17 @@ def main() -> None:
     for zone_key in zone_keys:
         logger.info("\n" + "=" * 50)
         logger.info(f"Running U-Net forecasting up to 2051 for: {zone_key}")
-        forecast_zone(zone_key, model, device, batch_size, num_workers, pin_memory, use_amp)
+        forecast_zone(
+            zone_key,
+            model,
+            device,
+            batch_size,
+            num_workers,
+            pin_memory,
+            use_amp,
+            temperature=args.temperature,
+            confidence_threshold=args.confidence_threshold,
+        )
 
     logger.info("\nAll zones successfully forecasted.")
 
