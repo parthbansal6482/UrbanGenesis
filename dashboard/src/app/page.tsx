@@ -123,8 +123,8 @@ function LineChart({
   // isExpanded changes (not on every parent re-render).
   const { margin, W, H, gx, gy, gridTicks, linePts, areaPts } = useMemo(() => {
     const margin = isExpanded
-      ? { top: 28, right: 24, bottom: 36, left: 56 }
-      : { top: 18, right: 14, bottom: 28, left: 32 };
+      ? { top: 28, right: 24, bottom: 36, left: 60 }
+      : { top: 18, right: 14, bottom: 28, left: 40 };
     const W = isExpanded ? 800 : 420;
     const H = isExpanded ? 360 : 150;
     const xW = W - margin.left - margin.right;
@@ -140,17 +140,21 @@ function LineChart({
 
     const years = data.map(d => d.year);
     const abis  = data.map(d => d.abi);
-    const rawMax = Math.max(...abis);
-    const maxAbi = rawMax < 2 ? Math.ceil(rawMax * 10) / 10 + 0.1
-      : rawMax < 5 ? Math.ceil(rawMax) + 0.5
-      : Math.ceil(rawMax / 2) * 2 + 1;
+    const minVal = Math.min(...abis);
+    const maxVal = Math.max(...abis);
+
+    // Dynamic framing with 15% padding top and bottom to fit values beautifully
+    const valRange = maxVal - minVal;
+    const padding = valRange > 0 ? valRange * 0.15 : 0.05;
+    const yMin = Math.max(0, minVal - padding);
+    const yMax = maxVal + padding;
+    const yRange = yMax - yMin;
 
     const tickCount = 4;
-    const tickStep = maxAbi / tickCount;
-    const gridTicks = Array.from({ length: tickCount }, (_, i) => +((i + 1) * tickStep).toFixed(2));
+    const gridTicks = Array.from({ length: tickCount }, (_, i) => +(yMin + (i * yRange) / (tickCount - 1)).toFixed(2));
 
     const gx = (yr: number) => margin.left + (years.indexOf(yr) / (years.length - 1)) * xW;
-    const gy = (v: number) => margin.top + yH - (v / maxAbi) * yH;
+    const gy = (v: number) => margin.top + yH - ((v - yMin) / (yRange || 1)) * yH;
 
     const linePts = data.map(d => `${gx(d.year).toFixed(1)},${gy(d.abi).toFixed(1)}`).join(" ");
     const areaPts = `${gx(years[0])},${margin.top + yH} ${linePts} ${gx(years[years.length - 1])},${margin.top + yH}`;
@@ -566,7 +570,7 @@ export default function Home() {
         }),
       });
     } else {
-      promise = fetch(`${API_ORIGIN}/api/analyse?zone=${selectedZoneKey}&before=${beforeYear}&after=${afterYear}`);
+      promise = fetch(`${API_ORIGIN}/api/analyse?zone=${selectedZoneKey}&before=${beforeYear}&after=${afterYear}&t=${refreshTrigger}`);
     }
 
     promise
@@ -697,9 +701,9 @@ export default function Home() {
     }
 
     if (url) {
-      // Use refreshTrigger for custom bboxes; use a model version suffix for precomputed zones to invalidate browser cache once
-      const buster = selectedZoneKey && selectedZoneKey.startsWith("bbox_") && refreshTrigger > 0
-        ? refreshTrigger
+      // Use a dynamic cache buster containing refreshTrigger if it has been activated, allowing manual cache invalidation
+      const buster = refreshTrigger > 0
+        ? `resnet34_v1_${refreshTrigger}`
         : "resnet34_v1";
       return `${url}?t=${buster}`;
     }
@@ -998,10 +1002,10 @@ export default function Home() {
                       <option value="" disabled>Select a Region…</option>
                       {zones.map(z => <option key={z.key} value={z.key}>{z.name}</option>)}
                     </select>
-                    {selectedZoneKey && selectedZoneKey.startsWith("bbox_") && (
+                    {selectedZoneKey && (
                       <>
                         <button
-                          title="Re-analyze this custom bounding box"
+                          title={selectedZoneKey.startsWith("bbox_") ? "Re-analyze this custom bounding box" : "Refresh map data and bust cache"}
                           disabled={loadingAnalysis}
                           onClick={() => {
                             setLoadingAnalysis(true);
@@ -1038,34 +1042,36 @@ export default function Home() {
                             </svg>
                           )}
                         </button>
-                        <button
-                          title="Delete this custom bounding box data"
-                          disabled={loadingAnalysis}
-                          onClick={() => handleDeleteCustomZone(selectedZoneKey)}
-                          style={{
-                            background: "rgba(220, 38, 38, 0.05)",
-                            border: "1px solid rgba(220, 38, 38, 0.22)",
-                            borderRadius: 8,
-                            padding: "8px 10px",
-                            color: "var(--red-400)",
-                            cursor: "pointer",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            opacity: loadingAnalysis ? 0.5 : 1,
-                            height: 35,
-                            width: 36,
-                            flexShrink: 0,
-                            transition: "all 0.15s ease",
-                          }}
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                            <line x1="10" y1="11" x2="10" y2="17" />
-                            <line x1="14" y1="11" x2="14" y2="17" />
-                          </svg>
-                        </button>
+                        {selectedZoneKey.startsWith("bbox_") && (
+                          <button
+                            title="Delete this custom bounding box data"
+                            disabled={loadingAnalysis}
+                            onClick={() => handleDeleteCustomZone(selectedZoneKey)}
+                            style={{
+                              background: "rgba(220, 38, 38, 0.05)",
+                              border: "1px solid rgba(220, 38, 38, 0.22)",
+                              borderRadius: 8,
+                              padding: "8px 10px",
+                              color: "var(--red-400)",
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              opacity: loadingAnalysis ? 0.5 : 1,
+                              height: 35,
+                              width: 36,
+                              flexShrink: 0,
+                              transition: "all 0.15s ease",
+                            }}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                              <line x1="10" y1="11" x2="10" y2="17" />
+                              <line x1="14" y1="11" x2="14" y2="17" />
+                            </svg>
+                          </button>
+                        )}
                       </>
                     )}
                   </div>
