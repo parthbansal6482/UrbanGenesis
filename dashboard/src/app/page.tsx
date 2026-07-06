@@ -686,6 +686,10 @@ export default function Home() {
 
   const getOverlayUrl = (which: "before" | "after") => {
     if (!analysis) return null;
+    const yr = which === "before" ? beforeYear : afterYear;
+    if (yr > 2023 && (vizMode === "True Color Satellite Image" || vizMode === "NDVI Vegetation Map")) {
+      return null;
+    }
     let url = null;
     if (vizMode === "Infrastructure Encroachment Heatmap") {
       if (which === "before") {

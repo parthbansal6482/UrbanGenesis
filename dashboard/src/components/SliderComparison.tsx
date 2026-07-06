@@ -56,8 +56,13 @@ function makeBlueprintDataUrl(year: number, label: string): string {
   ctx.fillStyle = "#dc2626";
   ctx.font = "bold 10.5px monospace";
   ctx.textAlign = "left";
-  ctx.fillText(`// SATELLITE RASTER ABSENT FOR ${year}`, 28, 108);
-  ctx.fillText(`// MODE: ${label.toUpperCase()}`, 28, 128);
+  if (year > 2023) {
+    ctx.fillText(`// SATELLITE DATA NOT AVAILABLE FOR ${year}`, 28, 108);
+    ctx.fillText(`// REASON: FUTURE PREDICTION YEAR`, 28, 128);
+  } else {
+    ctx.fillText(`// SATELLITE RASTER ABSENT FOR ${year}`, 28, 108);
+    ctx.fillText(`// MODE: ${label.toUpperCase()}`, 28, 128);
+  }
 
   // Crosshair
   ctx.strokeStyle = "rgba(5, 150, 105, 0.3)";
