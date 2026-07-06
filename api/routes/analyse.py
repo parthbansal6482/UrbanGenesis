@@ -259,13 +259,13 @@ def analyse_zone(
         "timeseries": timeseries,
         "overlays": {
             "before": {
-                "true_color": _get_overlay_url(zone, f"true_color_{before_yr}.png"),
-                "ndvi": _get_overlay_url(zone, f"ndvi_map_{before_yr}.png"),
+                "true_color": _get_overlay_url(zone, f"true_color_{before_yr}.png") if before_yr <= 2023 else None,
+                "ndvi": _get_overlay_url(zone, f"ndvi_map_{before_yr}.png") if before_yr <= 2023 else None,
                 "mask": _get_overlay_url(zone, f"mask_rgb_{before_yr}.png"),
             },
             "after": {
-                "true_color": _get_overlay_url(zone, f"true_color_{after_yr}.png"),
-                "ndvi": _get_overlay_url(zone, f"ndvi_map_{after_yr}.png"),
+                "true_color": _get_overlay_url(zone, f"true_color_{after_yr}.png") if after_yr <= 2023 else None,
+                "ndvi": _get_overlay_url(zone, f"ndvi_map_{after_yr}.png") if after_yr <= 2023 else None,
                 "mask": _get_overlay_url(zone, f"mask_rgb_{after_yr}.png"),
             },
             "encroachment_heatmap": encroachment_heatmap_url,
