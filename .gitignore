@@ -32,6 +32,17 @@ model/checkpoints/
 demo/precomputed/raw/
 demo/precomputed/*.tif
 demo/precomputed/*.npy
+demo/precomputed/*/encroachment_heatmap_*_*.png
+demo/precomputed/*/mask_rgb_*_median*.png
+demo/precomputed/*/true_color_202[5-9].png
+demo/precomputed/*/true_color_203*.png
+demo/precomputed/*/true_color_204*.png
+demo/precomputed/*/true_color_205*.png
+demo/precomputed/*/ndvi_map_202[5-9].png
+demo/precomputed/*/ndvi_map_203*.png
+demo/precomputed/*/ndvi_map_204*.png
+demo/precomputed/*/ndvi_map_205*.png
+demo/custom_cache/
 
 # ── Python standard ignores ───────────────────────────────────────────────────
 __pycache__/
