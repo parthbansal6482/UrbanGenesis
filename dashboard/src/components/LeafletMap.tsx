@@ -32,6 +32,14 @@ function gradeColor(g: string): string {
   return "#10b981";                  // Healthy (A) — emerald-500
 }
 
+function gradeBrightColor(g: string): string {
+  if (g === "F") return "#f87171";   // light red
+  if (g === "D") return "#fb923c";   // light orange
+  if (g === "C") return "#fbbf24";   // light amber
+  if (g === "B") return "#7dd3fc";   // light sky
+  return "#34d399";                  // light emerald (A)
+}
+
 export default function LeafletMap({
   zones,
   selectedZoneKey,
@@ -168,9 +176,8 @@ export default function LeafletMap({
 
   // ---------- Marker HTML ----------
   const buildMarkerHtml = useCallback((zone: ZoneData, selected: boolean) => {
-    const isHighRisk = zone.latest_grade === "F" || zone.latest_grade === "D" || zone.latest_grade === "C";
-    const color = isHighRisk ? "#dc2626" : "#059669";
-    const bright = isHighRisk ? "#f87171" : "#10b981";
+    const color = gradeColor(zone.latest_grade);
+    const bright = gradeBrightColor(zone.latest_grade);
     const gc = gradeColor(zone.latest_grade);
     const shortName = zone.name
       .replace(" Agricultural Zone", "")
@@ -382,30 +389,57 @@ export default function LeafletMap({
         </div>
       </div>
 
-      {/* Legend */}
+      {/* Legend - Bottom Left */}
       <div style={{
-        position: "absolute", bottom: 24, left: 0, right: 0,
-        display: "flex", justifyContent: "center",
+        position: "absolute", bottom: 12, left: 12,
+        zIndex: 500, pointerEvents: "auto",
+      }}>
+        <div className="glass-card" style={{
+          padding: "10px 14px", display: "flex", flexDirection: "column", gap: 7,
+          fontSize: 8.5, fontFamily: "monospace", letterSpacing: "0.06em",
+          textTransform: "uppercase", color: "var(--text-primary)",
+          width: 200, borderRadius: 6,
+        }}>
+          <div style={{
+            fontSize: 7.5, fontWeight: 800, color: "var(--text-muted)",
+            borderBottom: "1px solid var(--border-dim)", paddingBottom: 4, marginBottom: 2
+          }}>
+            Farmland Health Legend
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 14, height: 7, borderRadius: 1.5, background: "#10b981", display: "inline-block" }} />
+            <span style={{ color: "var(--text-secondary)" }}>Grade A · Healthy</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 14, height: 7, borderRadius: 1.5, background: "#38bdf8", display: "inline-block" }} />
+            <span style={{ color: "var(--text-secondary)" }}>Grade B · Stable Buffer</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 14, height: 7, borderRadius: 1.5, background: "#f59e0b", display: "inline-block" }} />
+            <span style={{ color: "var(--text-secondary)" }}>Grade C · Elevated Risk</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 14, height: 7, borderRadius: 1.5, background: "#f97316", display: "inline-block" }} />
+            <span style={{ color: "var(--text-secondary)" }}>Grade D · High Risk</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 14, height: 7, borderRadius: 1.5, background: "#dc2626", display: "inline-block" }} />
+            <span style={{ color: "var(--text-secondary)" }}>Grade F · Critical</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Control Help Tips - Bottom Right */}
+      <div style={{
+        position: "absolute", bottom: 12, right: 12,
         pointerEvents: "none", zIndex: 500,
       }}>
         <div className="glass-card" style={{
-          padding: "5px 14px", display: "flex", alignItems: "center", gap: 16,
-          fontSize: 9, fontFamily: "monospace", letterSpacing: "0.08em",
-          textTransform: "uppercase", color: "var(--text-muted)",
+          padding: "5px 12px",
+          fontSize: 8.5, fontFamily: "monospace", letterSpacing: "0.06em",
+          color: "var(--text-muted)", textTransform: "uppercase",
         }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#dc2626", display: "inline-block" }} />
-            Grade F / D (Critical — High Risk)
-          </span>
-          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#f59e0b", display: "inline-block" }} />
-            Grade C (Elevated Risk)
-          </span>
-          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#059669", display: "inline-block" }} />
-            Grade A / B (Stable Buffer)
-          </span>
-          <span>{inputMode === "draw" ? "Click & Drag to draw bbox" : "Scroll to zoom · Drag to pan · Click to audit"}</span>
+          {inputMode === "draw" ? "Click & Drag to draw bbox" : "Scroll to zoom · Drag to pan · Click to audit"}
         </div>
       </div>
     </div>
