@@ -183,7 +183,8 @@ export default function LeafletMap({
     const dotSz = selected ? 11 : 8;
 
     return `
-      <div style="position:relative;display:flex;align-items:center;justify-content:center;
+      <div class="map-marker-container ${selected ? "selected" : ""}"
+           style="position:relative;display:flex;align-items:center;justify-content:center;
                   width:${sz}px;height:${sz}px;cursor:pointer;">
         <div style="position:absolute;width:${sz}px;height:${sz}px;border-radius:50%;
                     border:1.5px solid ${color};animation:fgPulse 2s ease-in-out infinite;
@@ -199,8 +200,13 @@ export default function LeafletMap({
           <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
                       width:3px;height:3px;border-radius:50%;background:#fafaf9;opacity:0.9;"></div>
         </div>
-        <div style="position:absolute;left:${Math.round(sz / 2) + 6}px;top:50%;
-                    transform:translateY(-50%);white-space:nowrap;
+        <div class="map-marker-label"
+             style="position:absolute;left:${Math.round(sz / 2) + 6}px;top:50%;
+                    transform:translateY(-50%) scale(${selected ? 1 : 0.85});
+                    transform-origin:left center;
+                    opacity:${selected ? 1 : 0};
+                    transition:opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+                    white-space:nowrap;
                     background:${selected ? color : "#fafaf9"};
                     border:1px solid ${selected ? color : "var(--border-dim)"};
                     border-radius:5px;
@@ -237,12 +243,41 @@ export default function LeafletMap({
       const icon = L.divIcon({
         className: "",
         html: buildMarkerHtml(zone, selected),
-        iconSize: [sz + 180, sz],
+        iconSize: [sz, sz],
         iconAnchor: [Math.round(sz / 2), Math.round(sz / 2)],
       });
 
       const marker: Marker = L.marker([lat, lon], { icon, zIndexOffset: selected ? 1000 : 0 });
       marker.on("click", () => onSelectRef.current(zone.key));
+
+      // Inline hover animation listeners for unselected markers
+      if (!selected) {
+        marker.on("mouseover", () => {
+          const el = marker.getElement();
+          if (el) {
+            const labelEl = el.querySelector(".map-marker-label") as HTMLElement;
+            if (labelEl) {
+              labelEl.style.opacity = "1";
+              labelEl.style.transform = "translateY(-50%) scale(1)";
+            }
+            // Elevate marker on hover above normal markers
+            el.style.zIndex = "9999";
+          }
+        });
+        marker.on("mouseout", () => {
+          const el = marker.getElement();
+          if (el) {
+            const labelEl = el.querySelector(".map-marker-label") as HTMLElement;
+            if (labelEl) {
+              labelEl.style.opacity = "0";
+              labelEl.style.transform = "translateY(-50%) scale(0.85)";
+            }
+            // Reset z-index
+            el.style.zIndex = "";
+          }
+        });
+      }
+
       marker.addTo(map);
       markersRef.current.set(zone.key, marker);
     });
