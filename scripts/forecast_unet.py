@@ -2,7 +2,7 @@
 scripts/forecast_unet.py
 
 Uses a pre-trained U-Net model checkpoint to evaluate validation accuracy on 2023,
-forecast future years recursively up to 2051, and generate dashboard assets.
+forecast future years recursively up to 2041, and generate dashboard assets.
 """
 
 import argparse
@@ -68,7 +68,7 @@ def forecast_zone(
     pin_memory: bool = False,
     use_amp: bool = False,
     start_year: int = 2023,
-    target_year: int = 2051,
+    target_year: int = 2041,
     checkpoint_path: Path = None,
     zone_dir: Path = None,
     temperature: float = 0.8,
@@ -97,6 +97,22 @@ def forecast_zone(
         masks[yr] = rgb_to_mask(img)
 
     h, w = masks[historical_years[0]].shape
+    core_size = 96
+    pad_h = (core_size - (h % core_size)) % core_size
+    pad_w = (core_size - (w % core_size)) % core_size
+    padded_shape = (h + pad_h, w + pad_w)
+
+    # Load bbox config and compute road network proximity grid
+    with open(CONFIG_PATH) as f:
+        cfg = yaml.safe_load(f)
+    zone_cfg = cfg.get("zones", {}).get(zone_key, {})
+    bbox = zone_cfg.get("bbox", [0.0, 0.0, 0.0, 0.0])
+
+    from pipeline.osm_fetcher import get_road_proximity_grid
+    logger.info(f"[{zone_key}] Preparing transport corridor proximity grid for bbox {bbox}...")
+    road_edt = get_road_proximity_grid(zone_key, bbox, padded_shape)
+    # Exponential decay weights representing corridor influence (sigma = 15 pixels = 150m)
+    road_weight = np.exp(-road_edt / 15.0)
 
     for step_idx, target_yr in enumerate(forecast_years):
         logger.info(f"--- Processing Year {target_yr} ---")
@@ -105,11 +121,6 @@ def forecast_zone(
 
         mask_prev = masks[y_prev]
         mask_prev2 = masks[y_prev2]
-
-        h, w = mask_prev.shape
-        core_size = 96
-        pad_h = (core_size - (h % core_size)) % core_size
-        pad_w = (core_size - (w % core_size)) % core_size
 
         # 1. Pad masks to multiples of core_size (96) on bottom/right using edge padding
         mask_prev_padded = np.pad(mask_prev, ((0, pad_h), (0, pad_w)), mode="edge")
@@ -120,24 +131,25 @@ def forecast_zone(
         dist_prev = compute_distance_transforms(mask_prev_padded)
         dist_prev2 = compute_distance_transforms(mask_prev2_padded)
 
-        # --- URBAN PRESSURE INJECTION ---
+        # --- URBAN PRESSURE INJECTION (BIASED BY TRANSPORT CORRIDORS) ---
         # Problem: as buildings saturate the zone, dist_prev → 0 everywhere and
         # dist_diff → 0, meaning the model sees no spatial gradient to trigger expansion.
-        # Fix: inject a small synthetic momentum into dist_diff that grows with step index,
-        # simulating continued off-screen urban pressure from roads/corridors beyond the tile.
-        # Decays as the building fraction saturates (nothing left to convert).
+        # Fix: inject momentum into dist_diff that decays as building fraction saturates.
+        # We bias this injection using OpenStreetMap road network proximity to pull growth along roads.
         dist_diff = (dist_prev - dist_prev2).transpose(2, 0, 1)  # 5 x H x W, raw change velocity
         bld_fraction = float((mask_prev_padded == 1).mean())
-        # Saturates gently: when bld_fraction=0.5 → factor=0.5, when bld_fraction=0.9 → factor=0.1
         saturation_damping = max(0.0, 1.0 - bld_fraction * 1.1)
-        # Momentum grows slightly each step (max ~0.15 at step 14), damped by saturation
         momentum_strength = min(0.01 * (step_idx + 1), 0.15) * saturation_damping
+        
+        # Pixels near roads (road_weight=1.0) receive up to 3.3x more pressure boost than remote areas.
+        momentum_grid = momentum_strength * (0.3 + 0.7 * road_weight)
+
         # Apply only to the building class (channel 0 in dist, class id 1 in mask)
         # Negative dist_diff means buildings are getting closer → add extra negative push
         dist_diff_boosted = dist_diff.copy()
-        dist_diff_boosted[0] = dist_diff_boosted[0] - momentum_strength
+        dist_diff_boosted[0] = dist_diff_boosted[0] - momentum_grid
         logger.info(
-            f"  [{target_yr}] Urban pressure momentum: {momentum_strength:.4f} "
+            f"  [{target_yr}] Urban pressure momentum biased by transport corridors: max={momentum_strength:.4f} "
             f"(bld_frac={bld_fraction:.2f}, damping={saturation_damping:.2f})"
         )
 
@@ -386,7 +398,7 @@ def main() -> None:
     # 2. Run recursive forecasting for each zone
     for zone_key in zone_keys:
         logger.info("\n" + "=" * 50)
-        logger.info(f"Running U-Net forecasting up to 2051 for: {zone_key}")
+        logger.info(f"Running U-Net forecasting up to 2041 for: {zone_key}")
         forecast_zone(
             zone_key,
             model,
