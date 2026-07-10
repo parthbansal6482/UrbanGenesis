@@ -26,9 +26,9 @@ from analytics.abi import compute_abi, compute_cropland_loss_ha
 from analytics.grader import generate_verdict
 from core.class_map import CLASS_COLORS
 from core.config import CONFIG_PATH, PRECOMPUTED_DIR
-from core.image_utils import mask_to_rgb, rgb_to_mask
-from core.unet_dataset import GlobalPatchDataset, compute_distance_transforms
-from core.unet_model import UNet, ResNet34UNet
+from core.utils.image_utils import mask_to_rgb, rgb_to_mask
+from model.dataset import GlobalPatchDataset, compute_distance_transforms
+from model.architecture import UNet, ResNet34UNet
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("forecast_unet")

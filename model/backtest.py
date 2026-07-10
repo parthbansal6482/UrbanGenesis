@@ -22,8 +22,8 @@ import sys
 # Setup project root path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from core.unet_model import UNet
-from core.unet_dataset import GlobalPatchDataset
+from model.architecture import UNet
+from model.dataset import GlobalPatchDataset
 from analytics.abi import compute_abi
 
 logging.basicConfig(level=logging.INFO)
@@ -88,11 +88,11 @@ def run_backtest(
             f"Backtesting requires a year with real historical data, not a future projection."
         )
 
-    from core.image_utils import rgb_to_mask
+    from core.utils.image_utils import rgb_to_mask
     true_mask = rgb_to_mask(np.array(Image.open(true_mask_path)))
 
     # Run the model forward from cutoff_year to target_year
-    from scripts.forecast_unet import forecast_zone
+    from model.forecast import forecast_zone
     pred_mask = forecast_zone(
         zone_key=zone_key,
         start_year=cutoff_year,
@@ -122,7 +122,7 @@ def run_backtest(
 
 def save_visual_comparison(pred_mask, true_mask, output_path: Path):
     """Saves a side-by-side PNG: predicted mask | actual mask | difference map."""
-    from core.image_utils import mask_to_rgb
+    from core.utils.image_utils import mask_to_rgb
 
     pred_rgb = mask_to_rgb(pred_mask)
     true_rgb = mask_to_rgb(true_mask)

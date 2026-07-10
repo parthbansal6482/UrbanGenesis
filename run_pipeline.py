@@ -116,8 +116,8 @@ def main() -> None:
         logger.info("\n" + "=" * 60)
         logger.info("Running U-Net future spatial growth forecasting...")
         import torch
-        from core.unet_model import UNet
-        from scripts.forecast_unet import forecast_zone
+        from model.architecture import UNet
+        from model.forecast import forecast_zone
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if device.type == "cpu":
@@ -127,7 +127,7 @@ def main() -> None:
         load_path = Path(__file__).resolve().parent / "model" / "checkpoints" / "unet_weights.pt"
         if not load_path.exists():
             logger.error(f"U-Net checkpoint not found at: {load_path}")
-            logger.error("Please train the U-Net model first by running: python scripts/train_unet.py")
+            logger.error("Please train the U-Net model first by running: python model/train.py")
             sys.exit(1)
 
         model = UNet(in_channels=22, out_channels=6).to(device)

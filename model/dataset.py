@@ -12,7 +12,7 @@ from scipy.ndimage import distance_transform_edt
 from torch.utils.data import Dataset
 
 from core.config import PRECOMPUTED_DIR
-from core.image_utils import rgb_to_mask
+from core.utils.image_utils import rgb_to_mask
 
 
 def compute_distance_transforms(mask: np.ndarray) -> np.ndarray:

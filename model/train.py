@@ -20,8 +20,8 @@ from torch.utils.data import DataLoader
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.config import CONFIG_PATH
-from core.unet_dataset import ChangeWeightedHybridLoss, GlobalPatchDataset, compute_class_weights
-from core.unet_model import UNet, ResNet34UNet
+from model.dataset import ChangeWeightedHybridLoss, GlobalPatchDataset, compute_class_weights
+from model.architecture import UNet, ResNet34UNet
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("train_unet")

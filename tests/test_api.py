@@ -198,7 +198,7 @@ class TestCoreModules:
     def test_rgb_to_mask_roundtrip(self) -> None:
         """rgb_to_mask(mask_to_rgb(mask)) should recover the original mask."""
         import numpy as np
-        from core.image_utils import mask_to_rgb, rgb_to_mask
+        from core.utils.image_utils import mask_to_rgb, rgb_to_mask
 
         original = np.array([[0, 1, 2], [3, 4, 5]], dtype=np.uint8)
         rgb = mask_to_rgb(original)

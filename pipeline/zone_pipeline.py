@@ -28,7 +28,7 @@ from analytics.abi import compute_abi, compute_cropland_loss_ha
 from analytics.encroachment import calculate_encroachment_stats, generate_encroachment_heatmap
 from analytics.grader import generate_verdict
 from core.config import PRECOMPUTED_DIR
-from core.image_utils import mask_to_rgb
+from core.utils.image_utils import mask_to_rgb
 from pipeline.landcover_fetcher import fetch_esri_landcover_tile
 from pipeline.mock_generator import generate_realistic_mock, mask_to_ndvi, mask_to_true_color
 from pipeline.ndvi import generate_ndvi_map_from_bands

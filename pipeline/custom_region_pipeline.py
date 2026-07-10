@@ -13,7 +13,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Tuple
 
-from core.bbox_utils import bbox_cache_key, validate_bbox
+from core.utils.bbox_utils import bbox_cache_key, validate_bbox
 from pipeline.zone_pipeline import generate_zone_assets
 
 logger = logging.getLogger(__name__)

@@ -24,13 +24,13 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from core.bbox_utils import InvalidBBoxError, bbox_cache_key
+from core.utils.bbox_utils import InvalidBBoxError, bbox_cache_key
 from pipeline.custom_region_pipeline import CUSTOM_REGION_CACHE_DIR, get_cached_or_analyse
 
 from analytics.grader import assign_grade
 from api.dependencies import get_zones_config, load_zone_verdict
 from core.config import PRECOMPUTED_DIR
-from core.image_utils import rgb_to_mask
+from core.utils.image_utils import rgb_to_mask
 
 logger = logging.getLogger(__name__)
 
