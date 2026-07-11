@@ -63,6 +63,8 @@ export default function LeafletMap({
   const onDrawCompleteRef = useRef(onDrawComplete);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const drawRectangleRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hoverBboxRef = useRef<any>(null);
 
   useEffect(() => {
     onDrawCompleteRef.current = onDrawComplete;
@@ -239,6 +241,11 @@ export default function LeafletMap({
     const L = LRef.current;
     if (!map || !L) return;
 
+    if (hoverBboxRef.current) {
+      hoverBboxRef.current.remove();
+      hoverBboxRef.current = null;
+    }
+
     markersRef.current.forEach(m => m.remove());
     markersRef.current.clear();
 
@@ -257,33 +264,65 @@ export default function LeafletMap({
       const marker: Marker = L.marker([lat, lon], { icon, zIndexOffset: selected ? 1000 : 0 });
       marker.on("click", () => onSelectRef.current(zone.key));
 
-      // Inline hover animation listeners for unselected markers
-      if (!selected) {
-        marker.on("mouseover", () => {
-          const el = marker.getElement();
-          if (el) {
-            const labelEl = el.querySelector(".map-marker-label") as HTMLElement;
-            if (labelEl) {
-              labelEl.style.opacity = "1";
-              labelEl.style.transform = "translateY(-50%) scale(1)";
-            }
-            // Elevate marker on hover above normal markers
-            el.style.zIndex = "9999";
+      // Inline hover animation listeners
+      marker.on("mouseover", () => {
+        const el = marker.getElement();
+        if (el) {
+          const labelEl = el.querySelector(".map-marker-label") as HTMLElement;
+          if (labelEl && !selected) {
+            labelEl.style.opacity = "1";
+            labelEl.style.transform = "translateY(-50%) scale(1)";
           }
-        });
-        marker.on("mouseout", () => {
-          const el = marker.getElement();
-          if (el) {
-            const labelEl = el.querySelector(".map-marker-label") as HTMLElement;
-            if (labelEl) {
-              labelEl.style.opacity = "0";
-              labelEl.style.transform = "translateY(-50%) scale(0.85)";
-            }
-            // Reset z-index
-            el.style.zIndex = "";
+          // Elevate marker on hover
+          el.style.zIndex = "9999";
+        }
+
+        // Draw animated area box
+        if (zone.bbox && zone.bbox.length === 4) {
+          if (hoverBboxRef.current) {
+            hoverBboxRef.current.remove();
           }
-        });
-      }
+          const [lon_min, lat_min, lon_max, lat_max] = zone.bbox;
+          const color = gradeColor(zone.latest_grade);
+          hoverBboxRef.current = L.rectangle(
+            [[lat_min, lon_min], [lat_max, lon_max]],
+            {
+              color: color,
+              weight: 1.5,
+              fillColor: color,
+              fillOpacity: 0.04,
+              opacity: 0.8,
+              className: "animated-zone-bbox",
+              interactive: false,
+            }
+          ).addTo(map);
+        }
+      });
+
+      marker.on("mouseout", () => {
+        const el = marker.getElement();
+        if (el) {
+          const labelEl = el.querySelector(".map-marker-label") as HTMLElement;
+          if (labelEl && !selected) {
+            labelEl.style.opacity = "0";
+            labelEl.style.transform = "translateY(-50%) scale(0.85)";
+          }
+          // Reset z-index
+          el.style.zIndex = selected ? "1000" : "";
+        }
+
+        // Smoothly fade out and remove hover area box
+        const rect = hoverBboxRef.current;
+        if (rect) {
+          rect.setStyle({ opacity: 0, fillOpacity: 0 });
+          setTimeout(() => {
+            if (hoverBboxRef.current === rect) {
+              rect.remove();
+              hoverBboxRef.current = null;
+            }
+          }, 250);
+        }
+      });
 
       marker.addTo(map);
       markersRef.current.set(zone.key, marker);
@@ -332,6 +371,10 @@ export default function LeafletMap({
     });
 
     return () => {
+      if (hoverBboxRef.current) {
+        hoverBboxRef.current.remove();
+        hoverBboxRef.current = null;
+      }
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
