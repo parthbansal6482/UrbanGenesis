@@ -87,5 +87,5 @@ Across the four pre-registered agricultural zones, the backtesting harness measu
 | **Vijayawada West** | 88.9% | 2.6% | Highly dynamic riverine cropland boundary. |
 | **Bengaluru** | 91.1% | 10.9% | Rapid urban encroachment environment. |
 
-*Note: These results validate a 2-year forecast horizon. Projections beyond a 2-3 year horizon (e.g. up to 2051) have higher uncertainty and should be used as directional trend indicators.*
+*Note: These results validate a 2-year forecast horizon. Projections beyond a 2-3 year horizon (e.g. up to 2041) have higher uncertainty and should be used as directional trend indicators.*
 

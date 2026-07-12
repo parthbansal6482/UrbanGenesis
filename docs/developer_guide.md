@@ -191,6 +191,6 @@ PYTHONPATH=. pytest tests/ -v
 ### Backtest U-Net Forecasting Model
 To run backtesting evaluations comparing historical 2021 training cutoffs with real 2023 ground-truth outcomes:
 ```bash
-python scripts/backtest_unet.py
+python model/backtest.py
 ```
 This script computes Pixel Accuracy and ABI Prediction Error, generating comparison overlays under the `backtest_results/` directory.

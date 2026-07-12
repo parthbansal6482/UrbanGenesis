@@ -64,9 +64,12 @@ UrbanGenesis/
 │
 ├── app.py                       # Thin shim: `from api.main import create_app`
 ├── run_pipeline.py              # CLI entrypoint for the ETL pipeline
-└── scripts/
-    ├── forecast_unet.py         # U-Net forecasting script (supports backtesting runs)
-    └── backtest_unet.py         # U-Net accuracy evaluation & comparison map generator
+└── model/                       # Machine Learning architecture, dataset, training, and forecast
+    ├── architecture.py          # U-Net model layout
+    ├── dataset.py               # PyTorch dataset loading
+    ├── train.py                 # Standalone training script
+    ├── forecast.py              # U-Net forecasting script (with OSM corridor magnetism)
+    └── backtest.py              # U-Net accuracy evaluation & comparison map generator
 ```
 
 ---
@@ -137,10 +140,13 @@ Pure computation — no file I/O, no HTTP, no FarmGuard-internal imports.
 - **Timeline Visualization**: Custom SVG `LineChart` and `EncroachmentChart` for historical ABI and component trends.
 - **Fault-Tolerance**: Seamless offline fallback to pre-packaged timeseries data when the backend is unreachable.
 
-### 6. Forecast & Backtesting Suite (`scripts/`)
+### 6. Machine Learning Directory (`model/`)
 
-- **`forecast_unet.py`**: Implementation of the U-Net model forecasting land usage. Refactored to support configurable evaluation runs (e.g., training/cutoff at 2021 to forecast 2023) without overwriting active production directories.
-- **`backtest_unet.py`**: Evaluation script that computes backtest metrics (Pixel Accuracy and ABI Prediction Error) for all four pre-registered zones comparing predictions from 2021 to 2023 against the real 2023 ESRI LULC ground truth. Generates side-by-side verification maps (`actual_vs_predicted.png` and `difference_map.png`).
+- **`model/architecture.py`**: Implementation of the U-Net model architecture.
+- **`model/dataset.py`**: Custom PyTorch dataset loading, distance transforms, and hybrid weighted change loss.
+- **`model/train.py`**: Training script to fit U-Net on multitemporal transition maps.
+- **`model/forecast.py`**: Recursive growth forecast pipeline. Uses OpenStreetMap (OSM) highway network proximity maps to bias expansion logits near transport corridors up to year 2041.
+- **`model/backtest.py`**: Evaluation script that computes backtest metrics (Pixel Accuracy and ABI Prediction Error) comparing predictions against the real ESRI LULC ground truth. Generates side-by-side verification maps (`actual_vs_predicted.png`).
 
 ---
 
@@ -160,7 +166,7 @@ python run_pipeline.py --zone nashik_north
 python run_pipeline.py --mock
 
 # Run U-Net Forecast Backtesting Suite
-python scripts/backtest_unet.py
+python model/backtest.py
 
 # Start the Next.js dashboard
 cd dashboard && npm run dev

@@ -211,6 +211,17 @@ $$\text{Mask}_{T}[x, y] = 1 \quad \text{if} \quad \text{Mask}_{T-2}[x, y] == 1$$
 
 This ensures concrete infrastructure never disappears from our dashboard timeline.
 
+### C. Transport Corridor Proximity Biasing (OSM Corridor Magnetism)
+Urban expansion is strongly correlated with transportation networks. To capture this growth pattern, the recursive forecast loop incorporates highway proximity weights:
+1. **OSM Retrieval:** The system queries OpenStreetMap's Overpass API for road coordinates (motorways, trunks, primary, secondary, and tertiary routes) matching the bounding box. If offline, it falls back to a synthetic diagonal highway layout.
+2. **Euclidean Distance Transform:** The network path vectors are rasterized to pixel coordinates. The system then computes a distance transform grid, $D_{\text{road}}(x, y)$, representing the pixel distance to the nearest roadway.
+3. **Logit Biasing:** An exponential decay bias field is generated:
+   $$W_{\text{road}}(x, y) = 1.0 + \alpha \cdot e^{-\beta \cdot D_{\text{road}}(x, y)}$$
+   where $\alpha = 2.3$ represents the maximum logit boost near highways, and $\beta = 0.05$ governs the spatial decay rate.
+4. **Logit Application:** During recursive forecasting, the building logits $L_{\text{building}}$ are scaled by the road weights:
+   $$L_{\text{building}}(x, y) \leftarrow L_{\text{building}}(x, y) \cdot W_{\text{road}}(x, y)$$
+   This effectively pushes urban growth outward along transport lanes, capturing transit ribbon developments.
+
 ---
 
 ## 7. Model Stitching and Resolution Management

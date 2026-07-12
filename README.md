@@ -20,10 +20,20 @@ Satyukt-aligned Farmland Encroachment Detection System. Rebuilt from UrbanGenesi
 ## 📂 Project Directory Structure
 ```
 FarmGuard/
-├── core/                      # Shared constants and utilities (no internal deps)
+├── core/                      # Shared constants and configurations (no internal deps)
+│   ├── utils/                 # Unified helper utilities
+│   │   ├── bbox_utils.py      # validate_bbox(), bbox_cache_key()
+│   │   └── image_utils.py     # rgb_to_mask(), mask_to_rgb()
 │   ├── class_map.py           # CLASS_INFO, CLASS_RGB, CLASS_COLORS, ESRI_TO_FARMGUARD
-│   ├── config.py              # load_config(), PRECOMPUTED_DIR, safe_float()
-│   └── image_utils.py         # rgb_to_mask(), mask_to_rgb()
+│   └── config.py              # load_config(), PRECOMPUTED_DIR, safe_float()
+├── model/                     # Unified Machine Learning Directory
+│   ├── checkpoints/
+│   │   └── unet_weights.pt    # Pretrained weights
+│   ├── architecture.py        # Model architecture
+│   ├── dataset.py             # PyTorch dataset and hybrid loss
+│   ├── train.py               # Model training script
+│   ├── forecast.py            # Recursive forecasting (with OSM corridor magnetism)
+│   └── backtest.py            # Accuracy backtesting suite
 ├── api/                       # FastAPI HTTP layer
 │   ├── main.py                # create_app() — CORS, middleware, static mount, routers
 │   ├── dependencies.py        # load_zone_verdict() (LRU-cached), get_zones_config()
@@ -148,4 +158,4 @@ The U-Net forecasting model was backtested by training on data through 2021 and 
 | Vijayawada West | 88.9% | 2.6% |
 | Bengaluru | 91.1% | 10.9% |
 
-These results reflect a 2-year forecast horizon. Accuracy over the full 25-year projection horizon (2025–2051) has not been independently validated, since no ground truth exists for those years. Forecasts beyond ~2-3 years should be treated as directional trend indicators rather than precise predictions.
+These results reflect a 2-year forecast horizon. Accuracy over the full 15-year projection horizon (2025–2041) has not been independently validated, since no ground truth exists for those years. Forecasts beyond ~2-3 years should be treated as directional trend indicators rather than precise predictions.

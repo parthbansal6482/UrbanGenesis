@@ -8,7 +8,7 @@ product
 Agricultural analysts, risk modelers, insurance underwriters, and carbon credit auditors (RiskGuard, MRV Carbon, Crop Insurance use cases). They need to quickly assess cropland loss and urban encroachment risk for specific zones.
 
 ## Product Purpose
-Visualise 10m/px native land cover maps across pre-registered zones or arbitrary user-defined bounding boxes (drawn on map or entered manually). Track historical changes (2017–2023), project 2025 growth using a validated U-Net forecasting model, and compute the Agricultural Buffer Index (ABI) to grade and alert users of urban encroachment.
+Visualise 10m/px native land cover maps across pre-registered zones or arbitrary user-defined bounding boxes (drawn on map or entered manually). Track historical changes (2017–2023), project future growth up to 2041 using a validated U-Net forecasting model, and compute the Agricultural Buffer Index (ABI) to grade and alert users of urban encroachment.
 
 ## Brand Personality
 Expert, analytical, premium, trustworthy.
