@@ -3,7 +3,7 @@ analytics/encroachment.py
 
 Calculates the spatial encroachment of infrastructure (buildings and roads) on cropland,
 vegation, bare soil, and water bodies. Converts pixel measurements to hectares.
-Heatmap layers: existing_infra (slate), new_infra on veg/soil (orange), cropland_lost (red), water_lost (cyan).
+Heatmap layers: existing_infra (slate), cropland_lost (red), water_lost (cyan).
 Supports both SegFormer and ESRI landcover class mappings.
 """
 
@@ -61,8 +61,7 @@ def generate_encroachment_heatmap(mask_before: np.ndarray, mask_after: np.ndarra
     Layer rendering order (back to front):
       - Unchanged nature / background:               Dark blue-grey  (15, 23, 42)
       - Unchanged / existing infrastructure:         Slate grey      (71, 85, 105)
-      - NEW infrastructure on bare soil / veg:       Orange-yellow   (234, 179, 8)   [NEWLY ADDED]
-      - Cropland lost to buildings / roads:          Bright red      (239, 68, 68)
+      - Cropland lost to buildings / roads (New):    Bright red      (239, 68, 68)
       - Water bodies lost to buildings / roads:      Electric cyan   (6, 182, 212)
     """
     assert mask_before.shape == mask_after.shape, "Mask shapes must match."
@@ -84,15 +83,11 @@ def generate_encroachment_heatmap(mask_before: np.ndarray, mask_after: np.ndarra
 
     # Transition layers (applied back-to-front so high-priority overwrites low-priority)
     existing_infra = np.logical_and(is_infra_before, is_infra_after)
-    new_infra      = np.logical_and(~is_infra_before, is_infra_after)  # new this period
-    new_infra_not_crop_water = np.logical_and(new_infra, ~is_cropland_before)
-    new_infra_not_crop_water = np.logical_and(new_infra_not_crop_water, ~is_water_before)
     cropland_lost  = np.logical_and(is_cropland_before, is_infra_after)
     water_lost     = np.logical_and(is_water_before, is_infra_after)
 
     # Back-to-front paint
     heatmap[existing_infra]           = [71, 85, 105]   # Slate grey
-    heatmap[new_infra_not_crop_water] = [234, 179, 8]   # Orange-yellow (new infra on veg/soil)
     heatmap[cropland_lost]            = [239, 68, 68]   # Bright red
     heatmap[water_lost]               = [6, 182, 212]   # Electric cyan
 
