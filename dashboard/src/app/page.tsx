@@ -932,6 +932,7 @@ export default function Home() {
                 onSliderChange={setSliderValue}
                 showSlider={vizMode !== "Infrastructure Encroachment Heatmap"}
                 isMock={analysis?.is_mock || false}
+                vizMode={vizMode}
               />
             )}
           </div>
