@@ -16,6 +16,7 @@ interface SliderComparisonProps {
   onSliderChange: (v: number) => void;
   showSlider?: boolean;
   isMock?: boolean;
+  vizMode?: string;
 }
 
 // ============================================================
@@ -97,6 +98,7 @@ export default function SliderComparison({
   onSliderChange,
   showSlider = true,
   isMock = false,
+  vizMode,
 }: SliderComparisonProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [beforeSrc, setBeforeSrc] = useState<string | null>(null);
@@ -427,31 +429,6 @@ export default function SliderComparison({
               </svg>
             </div>
 
-            {/* ---- Before/After direction labels at bottom ---- */}
-            <div style={{
-              position: "absolute", bottom: 14, left: 14,
-              pointerEvents: "none", zIndex: 12,
-            }}>
-              <span className="glass-card" style={{
-                display: "inline-block",
-                fontSize: 9, fontFamily: "monospace", fontWeight: 700,
-                letterSpacing: "0.08em", textTransform: "uppercase",
-                padding: "3px 8px", borderRadius: 5,
-                color: "var(--text-secondary)",
-              }}>← Before</span>
-            </div>
-            <div style={{
-              position: "absolute", bottom: 14, right: 14,
-              pointerEvents: "none", zIndex: 12,
-            }}>
-              <span className="glass-card" style={{
-                display: "inline-block",
-                fontSize: 9, fontFamily: "monospace", fontWeight: 700,
-                letterSpacing: "0.08em", textTransform: "uppercase",
-                padding: "3px 8px", borderRadius: 5,
-                color: "var(--text-secondary)",
-              }}>After →</span>
-            </div>
           </>
         ) : (
           /* Single full-width Encroachment Heatmap view (also supports zoom & pan) */
@@ -477,9 +454,123 @@ export default function SliderComparison({
           )
         )}
 
+        {/* ---- Dynamic Legend Card ---- */}
+        {vizMode && vizMode !== "True Color Satellite Image" && (
+          <div
+            style={{
+              position: "absolute",
+              bottom: 12,
+              left: 12,
+              zIndex: 30,
+              pointerEvents: "auto",
+            }}
+          >
+            <div
+              className="glass-card"
+              style={{
+                padding: "10px 14px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 7,
+                fontSize: 8.5,
+                fontFamily: "monospace",
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: "var(--text-primary)",
+                width: 200,
+                borderRadius: 6,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 7.5,
+                  fontWeight: 800,
+                  color: "var(--text-muted)",
+                  borderBottom: "1px solid var(--border-dim)",
+                  paddingBottom: 4,
+                  marginBottom: 2,
+                }}
+              >
+                {vizMode === "AI Land Use Classification"
+                  ? "AI Classification Legend"
+                  : vizMode === "Infrastructure Encroachment Heatmap"
+                  ? "Encroachment Legend"
+                  : "NDVI Vegetation Legend"}
+              </div>
+
+              {vizMode === "AI Land Use Classification" && (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 14, height: 7, borderRadius: 1.5, background: "#228B22", display: "inline-block" }} />
+                    <span style={{ color: "var(--text-secondary)" }}>Dense Vegetation</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 14, height: 7, borderRadius: 1.5, background: "#D4A017", display: "inline-block" }} />
+                    <span style={{ color: "var(--text-secondary)" }}>Cropland</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 14, height: 7, borderRadius: 1.5, background: "#DC2626", display: "inline-block" }} />
+                    <span style={{ color: "var(--text-secondary)" }}>Buildings</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 14, height: 7, borderRadius: 1.5, background: "#1E64C8", display: "inline-block" }} />
+                    <span style={{ color: "var(--text-secondary)" }}>Water Bodies</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 14, height: 7, borderRadius: 1.5, background: "#D2B48C", display: "inline-block" }} />
+                    <span style={{ color: "var(--text-secondary)" }}>Bare Soil</span>
+                  </div>
+                </>
+              )}
+
+              {vizMode === "Infrastructure Encroachment Heatmap" && (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 14, height: 7, borderRadius: 1.5, background: "#ef4444", display: "inline-block" }} />
+                    <span style={{ color: "var(--text-secondary)" }}>New Infrastructure</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 14, height: 7, borderRadius: 1.5, background: "#06b6d4", display: "inline-block" }} />
+                    <span style={{ color: "var(--text-secondary)" }}>Water Lost</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 14, height: 7, borderRadius: 1.5, background: "#475569", display: "inline-block" }} />
+                    <span style={{ color: "var(--text-secondary)" }}>Existing Infra</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 14, height: 7, borderRadius: 1.5, background: "#0f172a", display: "inline-block" }} />
+                    <span style={{ color: "var(--text-secondary)" }}>Unchanged / Nature</span>
+                  </div>
+                </>
+              )}
+
+              {vizMode === "NDVI Vegetation Map" && (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 14, height: 7, borderRadius: 1.5, background: "#1b7837", display: "inline-block" }} />
+                    <span style={{ color: "var(--text-secondary)" }}>Dense Canopy (&gt;0.5)</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 14, height: 7, borderRadius: 1.5, background: "#a6dba0", display: "inline-block" }} />
+                    <span style={{ color: "var(--text-secondary)" }}>Cropland (0.2 - 0.5)</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 14, height: 7, borderRadius: 1.5, background: "#fdae61", display: "inline-block" }} />
+                    <span style={{ color: "var(--text-secondary)" }}>Bare/Sparse Soil (0.0 - 0.2)</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 14, height: 7, borderRadius: 1.5, background: "#d73027", display: "inline-block" }} />
+                    <span style={{ color: "var(--text-secondary)" }}>Non-Veg/Water (&lt;0.0)</span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* ---- Zoom / Reset controls HUD ---- */}
         <div style={{
-          position: "absolute", bottom: 48, right: 12, zIndex: 30,
+          position: "absolute", bottom: 12, right: 12, zIndex: 30,
           display: "flex", flexDirection: "column", gap: 4,
           pointerEvents: "auto",
         }}>
