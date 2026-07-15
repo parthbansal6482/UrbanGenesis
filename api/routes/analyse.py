@@ -286,21 +286,42 @@ class BBoxAnalyseRequest(BaseModel):
 def analyse_bbox(request: BBoxAnalyseRequest):
     bbox = (request.min_lon, request.min_lat, request.max_lon, request.max_lat)
     try:
+        verdict: dict = {}
+        _verdict_from_cache = False
         target_years = [2017, 2019, 2021, 2023]
+
+        # Check for an existing verdict.json that may contain forecasted future years
+        import json as _json
+        cache_key_early = bbox_cache_key(bbox)
+        cache_dir_early = CUSTOM_REGION_CACHE_DIR / cache_key_early
+        forecast_verdict_path = cache_dir_early / "verdict.json"
+        if not request.force_refresh and forecast_verdict_path.exists():
+            with open(forecast_verdict_path) as _f:
+                _cached = _json.load(_f)
+            _cached_years = sorted(r["year"] for r in _cached.get("timeseries", []))
+            if len(_cached_years) > 4:
+                verdict = _cached
+                target_years = _cached_years
+                _verdict_from_cache = True
+
         if request.force_refresh:
             import shutil
-            cache_key = bbox_cache_key(bbox)
-            cache_dir = CUSTOM_REGION_CACHE_DIR / cache_key
-            if cache_dir.exists():
-                logger.info(f"Force refresh requested for bbox {bbox} — deleting cached folder {cache_dir}")
-                shutil.rmtree(cache_dir)
+            _fk = bbox_cache_key(bbox)
+            _fd = CUSTOM_REGION_CACHE_DIR / _fk
+            if _fd.exists():
+                logger.info(f"Force refresh requested for bbox {bbox} — deleting cached folder {_fd}")
+                shutil.rmtree(_fd)
+            target_years = [2017, 2019, 2021, 2023]
 
-        verdict = get_cached_or_analyse(bbox, years=target_years)
+        if not _verdict_from_cache:
+            verdict = get_cached_or_analyse(bbox, years=target_years)
+
         cache_key = bbox_cache_key(bbox)
 
         # Build the exact same output structure as analyse_zone
         timeseries = verdict.get("timeseries", [])
         available_years = sorted(r["year"] for r in timeseries)
+
 
         if not available_years:
             raise HTTPException(status_code=500, detail="No timeseries data found.")
@@ -363,13 +384,13 @@ def analyse_bbox(request: BBoxAnalyseRequest):
             "timeseries": timeseries,
             "overlays": {
                 "before": {
-                    "true_color": f"/static_custom/{cache_key}/true_color_{before_yr}.png",
-                    "ndvi": f"/static_custom/{cache_key}/ndvi_map_{before_yr}.png",
+                    "true_color": f"/static_custom/{cache_key}/true_color_{before_yr}.png" if before_yr <= 2023 else None,
+                    "ndvi": f"/static_custom/{cache_key}/ndvi_map_{before_yr}.png" if before_yr <= 2023 else None,
                     "mask": f"/static_custom/{cache_key}/mask_rgb_{before_yr}.png",
                 },
                 "after": {
-                    "true_color": f"/static_custom/{cache_key}/true_color_{after_yr}.png",
-                    "ndvi": f"/static_custom/{cache_key}/ndvi_map_{after_yr}.png",
+                    "true_color": f"/static_custom/{cache_key}/true_color_{after_yr}.png" if after_yr <= 2023 else None,
+                    "ndvi": f"/static_custom/{cache_key}/ndvi_map_{after_yr}.png" if after_yr <= 2023 else None,
                     "mask": f"/static_custom/{cache_key}/mask_rgb_{after_yr}.png",
                 },
                 "encroachment_heatmap": f"/static_custom/{cache_key}/encroachment_heatmap.png",
@@ -380,6 +401,134 @@ def analyse_bbox(request: BBoxAnalyseRequest):
     except Exception as e:
         logger.error(f"Custom analysis failed: {e}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@router.post("/api/forecast_bbox")
+def forecast_bbox(request: BBoxAnalyseRequest):
+    bbox = (request.min_lon, request.min_lat, request.max_lon, request.max_lat)
+    try:
+        cache_key = bbox_cache_key(bbox)
+        # 1. First ensure historical analysis is done and cached
+        target_years = [2017, 2019, 2021, 2023]
+        verdict = get_cached_or_analyse(bbox, years=target_years)
+
+        # 2. Run forecasting to 2041 if not already done
+        cache_dir = CUSTOM_REGION_CACHE_DIR / cache_key
+        final_forecast_mask_path = cache_dir / "mask_rgb_2041.png"
+        if request.force_refresh or not final_forecast_mask_path.exists():
+            logger.info(f"Running U-Net forecasting recursively to 2041 for custom bbox {bbox}")
+            import torch
+            from model.forecast import forecast_zone, load_model_from_checkpoint
+
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            if device.type == "cpu":
+                torch.set_num_threads(2)
+                torch.set_num_interop_threads(1)
+
+            load_path = Path(__file__).resolve().parent.parent.parent / "model" / "checkpoints" / "unet_weights.pt"
+            if not load_path.exists():
+                raise HTTPException(status_code=500, detail=f"U-Net checkpoint not found at: {load_path}")
+
+            model = load_model_from_checkpoint(load_path, device)
+
+            # Run future forecast using loaded checkpoint
+            forecast_zone(
+                zone_key=cache_key,
+                model=model,
+                device=device,
+                start_year=2023,
+                target_year=2041,
+                zone_dir=cache_dir,
+            )
+
+            # Re-load updated verdict
+            import json
+            verdict_path = cache_dir / "verdict.json"
+            with open(verdict_path) as f:
+                verdict = json.load(f)
+
+        # Build output structure matching GET /api/analyse or POST /api/analyse_bbox
+        timeseries = verdict.get("timeseries", [])
+        available_years = sorted(r["year"] for r in timeseries)
+
+        if not available_years:
+            raise HTTPException(status_code=500, detail="No timeseries data found.")
+
+        # Clamp requested years to available generated years
+        requested_before = request.years[0] if (request.years and len(request.years) > 0) else available_years[0]
+        requested_after = request.years[-1] if (request.years and len(request.years) > 1) else available_years[-1]
+
+        before_yr = min(available_years, key=lambda x: abs(x - requested_before))
+        after_yr = min(available_years, key=lambda x: abs(x - requested_after))
+
+        rec_before = next((r for r in timeseries if r["year"] == before_yr), None)
+        rec_after = next((r for r in timeseries if r["year"] == after_yr), None)
+
+        before_abi = rec_before.get("abi", 0.0) if rec_before else 0.0
+        after_abi = rec_after.get("abi", 0.0) if rec_after else 0.0
+        abi_change_pct = round(((after_abi - before_abi) / before_abi) * 100.0, 1) if before_abi > 0 else 0.0
+
+        grade_info = assign_grade(after_abi)
+
+        if rec_before and rec_after:
+            dynamic_crop_loss_ha = round(
+                (rec_before.get("cropland_pixels", 0) - rec_after.get("cropland_pixels", 0)) * 0.01, 2
+            )
+        else:
+            dynamic_crop_loss_ha = verdict.get("cropland_loss_ha", 0.0)
+
+        encroachment_stats = verdict.get("encroachment", {"total_cropland_lost_ha": 0.0, "total_water_lost_ha": 0.0})
+
+        is_mock = verdict.get("is_mock", False)
+
+        return {
+            "is_mock": is_mock,
+            "zone_info": {
+                "key": cache_key,
+                "name": f"Custom Region ({bbox[0]:.3f}, {bbox[1]:.3f})",
+                "bbox": list(bbox),
+                "center": [(bbox[1] + bbox[3]) / 2, (bbox[0] + bbox[2]) / 2],
+                "years": available_years,
+                "satyukt_relevance": "User drawn arbitrary region analysis with U-Net forecasting.",
+            },
+            "metrics": {
+                "latest_abi": after_abi,
+                "overall_abi_change_pct": abi_change_pct,
+                "cropland_loss_ha": dynamic_crop_loss_ha,
+                "grade": grade_info.get("grade", "N/A"),
+                "label": grade_info.get("label", ""),
+                "description": grade_info.get("description", ""),
+                "encroachment_alert": verdict.get("encroachment_alert", False),
+                "encroachment": encroachment_stats,
+            },
+            "comparison": {
+                "before_year": before_yr,
+                "after_year": after_yr,
+                "before_abi": before_abi,
+                "after_abi": after_abi,
+                "abi_change_pct": abi_change_pct,
+            },
+            "transitions": _build_transitions(rec_before, rec_after),
+            "timeseries": timeseries,
+            "overlays": {
+                "before": {
+                    "true_color": f"/static_custom/{cache_key}/true_color_{before_yr}.png" if before_yr <= 2023 else None,
+                    "ndvi": f"/static_custom/{cache_key}/ndvi_map_{before_yr}.png" if before_yr <= 2023 else None,
+                    "mask": f"/static_custom/{cache_key}/mask_rgb_{before_yr}.png",
+                },
+                "after": {
+                    "true_color": f"/static_custom/{cache_key}/true_color_{after_yr}.png" if after_yr <= 2023 else None,
+                    "ndvi": f"/static_custom/{cache_key}/ndvi_map_{after_yr}.png" if after_yr <= 2023 else None,
+                    "mask": f"/static_custom/{cache_key}/mask_rgb_{after_yr}.png",
+                },
+                "encroachment_heatmap": f"/static_custom/{cache_key}/encroachment_heatmap.png",
+            },
+        }
+    except InvalidBBoxError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Custom forecast failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Forecasting failed: {str(e)}")
 
 
 @router.get("/static_custom/{cache_key}/{filename}")
