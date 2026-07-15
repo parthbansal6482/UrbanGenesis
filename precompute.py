@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-run_pipeline.py — FarmGuard ETL pipeline CLI.
+precompute.py — FarmGuard ETL pipeline CLI.
 
 Fetches ESRI Annual Land Cover + Sentinel-2 imagery from Microsoft
 Planetary Computer and generates precomputed demo assets under
@@ -8,16 +8,16 @@ Planetary Computer and generates precomputed demo assets under
 
 Usage:
     # Process all zones using live satellite data
-    python run_pipeline.py
+    python precompute.py
 
     # Process a single zone using live data
-    python run_pipeline.py --zone nashik_north
+    python precompute.py --zone nashik_north
 
     # Process all zones using fast synthetic mock data (no network)
-    python run_pipeline.py --mock
+    python precompute.py --mock
 
     # Process one zone with mock data
-    python run_pipeline.py --zone bengaluru --mock
+    python precompute.py --zone bengaluru --mock
 
 Options:
     --zone ZONE_KEY   Process only the specified zone (default: all)
