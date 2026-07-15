@@ -351,11 +351,24 @@ const getStoredCustomZones = (): ZoneData[] => {
   }
 };
 
-const saveCustomZone = (zone: ZoneData) => {
+const saveCustomZone = (zone: ZoneData, replaceYears = false) => {
   if (typeof window === "undefined") return;
   try {
     const existing = getStoredCustomZones();
-    if (!existing.some(z => z.key === zone.key)) {
+    const index = existing.findIndex(z => z.key === zone.key);
+    if (index >= 0) {
+      // On force refresh (replaceYears=true): replace years to wipe forecasted data
+      // Normally: merge years to preserve previously forecasted future years
+      const finalYears = replaceYears
+        ? zone.years
+        : Array.from(new Set([...existing[index].years, ...zone.years])).sort((a, b) => a - b);
+      existing[index] = {
+        ...existing[index],
+        ...zone,
+        years: finalYears,
+      };
+      localStorage.setItem("farmguard_custom_zones", JSON.stringify(existing));
+    } else {
       localStorage.setItem("farmguard_custom_zones", JSON.stringify([...existing, zone]));
     }
   } catch (e) {
@@ -411,6 +424,7 @@ export default function Home() {
 
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState<boolean>(false);
+  const [loadingForecast, setLoadingForecast] = useState<boolean>(false);
   const [apiWarning, setApiWarning] = useState<string | null>(null);
   const [expandedChart, setExpandedChart] = useState<"line" | "encroachment" | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
@@ -419,14 +433,16 @@ export default function Home() {
   const currentZone = zones.find(z => z.key === selectedZoneKey) || null;
 
   const availableYears = useMemo(() => {
-    if (inputMode === "named" && currentZone) {
+    // Always prefer the zone registry's years (which survive refresh and include forecasted years)
+    if (currentZone) {
       return currentZone.years;
     }
+    // Fallback: derive from last analysis response (e.g. brand-new custom bbox not yet in zones)
     if (analysis && analysis.zone_info && analysis.zone_info.years) {
       return analysis.zone_info.years;
     }
     return [2017, 2019, 2021, 2023];
-  }, [inputMode, currentZone, analysis]);
+  }, [currentZone, analysis]);
 
   // Clamp selected years when availableYears change (e.g. switching zones or modes)
   /* eslint-disable react-hooks/set-state-in-effect */
@@ -506,8 +522,14 @@ export default function Home() {
     }
     const key = getBboxCacheKey(minLon, minLat, maxLon, maxLat);
     setSelectedZoneKey(key);
-    setBeforeYear(2017);
-    setAfterYear(2023);
+    const existingZone = zones.find(z => z.key === key);
+    if (existingZone && existingZone.years.length > 0) {
+      setBeforeYear(existingZone.years[0]);
+      setAfterYear(existingZone.years[existingZone.years.length - 1]);
+    } else {
+      setBeforeYear(2017);
+      setAfterYear(2023);
+    }
     setActiveTab("comparison");
   };
 
@@ -590,6 +612,7 @@ export default function Home() {
 
         // Add custom bbox to the zones list if not already present
         if (d.zone_info.key.startsWith("bbox_")) {
+          const isForceRefresh = forceRefreshRef.current;
           const newZone: ZoneData = {
             key: d.zone_info.key,
             name: d.zone_info.name,
@@ -603,14 +626,31 @@ export default function Home() {
             years: d.zone_info.years,
             satyukt_relevance: d.zone_info.satyukt_relevance,
           };
-          saveCustomZone(newZone);
+
+          // On force refresh: replace years (wipes forecasted years from state + storage)
+          // On normal fetch: merge years (preserves previously forecasted years)
+          saveCustomZone(newZone, isForceRefresh);
 
           setZones(prevZones => {
             if (prevZones.some(z => z.key === d.zone_info.key)) {
-              return prevZones;
+              return prevZones.map(z => {
+                if (z.key === d.zone_info.key) {
+                  const finalYears = isForceRefresh
+                    ? newZone.years   // replace: back to historical only
+                    : Array.from(new Set([...z.years, ...newZone.years])).sort((a, b) => a - b); // merge
+                  return { ...z, ...newZone, years: finalYears };
+                }
+                return z;
+              });
             }
             return [...prevZones, newZone];
           });
+
+          // On force refresh, also reset year selectors to the returned historical range
+          if (isForceRefresh) {
+            setBeforeYear(d.zone_info.years[0]);
+            setAfterYear(d.zone_info.years[d.zone_info.years.length - 1]);
+          }
         }
       })
       .catch((err) => {
@@ -678,6 +718,87 @@ export default function Home() {
         alert(`Error deleting custom region: ${err.message || err}`);
       })
       .finally(() => {
+        setLoadingAnalysis(false);
+      });
+  };
+
+  const handleRunCustomForecast = () => {
+    if (!selectedZoneKey || !selectedZoneKey.startsWith("bbox_")) return;
+
+    const parts = selectedZoneKey.split("_");
+    const min_lon = parseFloat(parts[1]);
+    const min_lat = parseFloat(parts[2]);
+    const max_lon = parseFloat(parts[3]);
+    const max_lat = parseFloat(parts[4]);
+
+    setLoadingForecast(true);
+    setLoadingAnalysis(true);
+    setAnalysisError(null);
+
+    fetch(`${API_ORIGIN}/api/forecast_bbox`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        min_lon,
+        min_lat,
+        max_lon,
+        max_lat,
+        years: [beforeYear, afterYear],
+        force_refresh: false,
+      }),
+    })
+      .then(res => {
+        if (!res.ok) {
+          return res.json().then(err => {
+            throw new Error(err.detail || "Forecasting failed");
+          });
+        }
+        return res.json();
+      })
+      .then(d => {
+        setAnalysis(d);
+        // Automatically set audited/future year to 2041 to show the forecast immediately
+        setBeforeYear(2017);
+        setAfterYear(2041);
+        
+        // Update the zones registry so that the new years list is stored
+        setZones(prev => {
+          const updated = prev.map(z => {
+            if (z.key === selectedZoneKey) {
+              return {
+                ...z,
+                years: d.zone_info.years,
+                latest_grade: d.metrics.grade,
+                latest_abi: d.metrics.latest_abi,
+                overall_abi_change_pct: d.metrics.overall_abi_change_pct,
+              };
+            }
+            return z;
+          });
+          // Update custom zones storage
+          const stored = getStoredCustomZones();
+          const updatedStored = stored.map(z => {
+            if (z.key === selectedZoneKey) {
+              return {
+                ...z,
+                years: d.zone_info.years,
+                latest_grade: d.metrics.grade,
+                latest_abi: d.metrics.latest_abi,
+                overall_abi_change_pct: d.metrics.overall_abi_change_pct,
+              };
+            }
+            return z;
+          });
+          localStorage.setItem("farmguard_custom_zones", JSON.stringify(updatedStored));
+          return updated;
+        });
+      })
+      .catch(err => {
+        console.error("Forecasting failed:", err);
+        setAnalysisError(err.message || "Forecasting failed. Try a smaller/different region.");
+      })
+      .finally(() => {
+        setLoadingForecast(false);
         setLoadingAnalysis(false);
       });
   };
@@ -945,7 +1066,8 @@ export default function Home() {
           display: "flex", flexDirection: "column",
           background: "var(--bg-surface)", overflow: "hidden", minHeight: 0,
         }}>
-          {/* Setup panel */}
+          {/* Setup panel — hidden in comparison mode */}
+          {activeTab === "map" && (
           <div style={{
             flexShrink: 0, padding: "18px 18px 14px",
             borderBottom: "1px solid var(--border-dim)",
@@ -1276,9 +1398,230 @@ export default function Home() {
               </div>
             </>)}
           </div>
+          )}
 
-          {/* Metrics panel */}
+          {/* Metrics panel — only shown in Image Comparison mode */}
+          {activeTab === "comparison" && (
           <div style={{ flex: 1, overflowY: "auto", padding: "18px 18px" }}>
+
+            {/* Compact comparison-mode controls — shown only in Image Comparison tab */}
+            {activeTab === "comparison" && (
+              <div style={{
+                marginBottom: 14,
+                padding: "12px 14px",
+                background: "rgba(5, 150, 105, 0.04)",
+                border: "1px solid var(--border-dim)",
+                borderRadius: 10,
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+              }}>
+
+                {/* Zone selector + actions */}
+                <div>
+                  <label htmlFor="cmp-zone-select" className="section-label"
+                    style={{ display: "block", marginBottom: 6, color: "var(--text-secondary)" }}>
+                    Target Region
+                  </label>
+                  {zonesError ? (
+                    <div className="glass-card" style={{ padding: "8px 12px", border: "1px solid rgba(220, 38, 38, 0.25)", background: "var(--red-dim)", borderRadius: 8 }}>
+                      <p style={{ color: "var(--red-500)", fontSize: 11, margin: 0, fontFamily: "monospace" }}>
+                        ⚠️ {zonesError}
+                      </p>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <select id="cmp-zone-select" value={selectedZoneKey || ""}
+                        onChange={e => handleSelectZone(e.target.value)}
+                        style={{ flex: 1 }}>
+                        <option value="" disabled>Select a Region…</option>
+                        {zones.map(z => <option key={z.key} value={z.key}>{z.name}</option>)}
+                      </select>
+                      {selectedZoneKey && (
+                        <>
+                          {/* Refresh / re-analyze */}
+                          <button
+                            title={selectedZoneKey.startsWith("bbox_") ? "Re-analyze this custom bounding box" : "Refresh map data and bust cache"}
+                            disabled={loadingAnalysis}
+                            onClick={() => {
+                              setLoadingAnalysis(true);
+                              forceRefreshRef.current = true;
+                              setRefreshTrigger(prev => prev + 1);
+                            }}
+                            style={{
+                              background: "var(--emerald-dim)",
+                              border: "1px solid var(--border-active)",
+                              borderRadius: 8,
+                              padding: "8px 10px",
+                              color: "var(--emerald-400)",
+                              cursor: "pointer",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              opacity: loadingAnalysis ? 0.5 : 1,
+                              height: 35, width: 36, flexShrink: 0,
+                              transition: "all 0.15s ease",
+                            }}
+                          >
+                            {loadingAnalysis ? (
+                              <div style={{
+                                width: 14, height: 14, borderRadius: "50%",
+                                border: "1.5px solid var(--border-dim)",
+                                borderTopColor: "var(--emerald-400)",
+                                animation: "spin 0.8s linear infinite"
+                              }} />
+                            ) : (
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+                              </svg>
+                            )}
+                          </button>
+                          {/* Delete (custom bbox only) */}
+                          {selectedZoneKey.startsWith("bbox_") && (
+                            <button
+                              title="Delete this custom bounding box data"
+                              disabled={loadingAnalysis}
+                              onClick={() => handleDeleteCustomZone(selectedZoneKey)}
+                              style={{
+                                background: "rgba(220, 38, 38, 0.05)",
+                                border: "1px solid rgba(220, 38, 38, 0.22)",
+                                borderRadius: 8,
+                                padding: "8px 10px",
+                                color: "var(--red-400)",
+                                cursor: "pointer",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                opacity: loadingAnalysis ? 0.5 : 1,
+                                height: 35, width: 36, flexShrink: 0,
+                                transition: "all 0.15s ease",
+                              }}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                <line x1="10" y1="11" x2="10" y2="17" />
+                                <line x1="14" y1="11" x2="14" y2="17" />
+                              </svg>
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {analysis?.is_mock && (
+                    <div className="glass-card animate-pulse" style={{
+                      marginTop: 8, padding: "8px 12px",
+                      border: "1px solid rgba(217, 119, 6, 0.25)",
+                      background: "rgba(217, 119, 6, 0.05)",
+                      borderRadius: 8, display: "flex", alignItems: "center", gap: 8,
+                    }}>
+                      <span className="dot-pulse amber" style={{ width: 8, height: 8 }} />
+                      <span style={{ fontSize: 10, color: "#b45309", fontWeight: 700, fontFamily: "monospace", letterSpacing: "0.02em" }}>
+                        SIMULATED DATA ACTIVE
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Year selectors — only when a zone is selected */}
+                {selectedZoneKey && (<>
+                {/* Year selectors row */}
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div>
+                    <label htmlFor="cmp-before-yr" className="section-label"
+                      style={{ display: "block", marginBottom: 4, color: "var(--text-secondary)", fontSize: 9 }}>
+                      Baseline Year
+                    </label>
+                    <select id="cmp-before-yr" value={beforeYear} onChange={e => setBeforeYear(Number(e.target.value))}
+                      style={{ fontSize: 11, padding: "5px 8px" }}>
+                      {availableYears.map(yr => <option key={yr} value={yr} disabled={yr >= afterYear}>{yr}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="cmp-after-yr" className="section-label"
+                      style={{ display: "block", marginBottom: 4, color: "var(--text-secondary)", fontSize: 9 }}>
+                      Audited Year
+                    </label>
+                    <select id="cmp-after-yr" value={afterYear} onChange={e => setAfterYear(Number(e.target.value))}
+                      style={{ fontSize: 11, padding: "5px 8px" }}>
+                      {availableYears.map(yr => <option key={yr} value={yr} disabled={yr <= beforeYear}>{yr}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Viz mode selector */}
+                <div>
+                  <label htmlFor="cmp-viz-mode" className="section-label"
+                    style={{ display: "block", marginBottom: 4, color: "var(--text-secondary)", fontSize: 9 }}>
+                    Overlay Mode
+                  </label>
+                  <select id="cmp-viz-mode" value={vizMode} onChange={e => setVizMode(e.target.value)}
+                    style={{ fontSize: 11, padding: "5px 8px", width: "100%" }}>
+                    <option value="AI Land Use Classification">AI Land Use Classification</option>
+                    <option value="True Color Satellite Image">True Color Satellite Image</option>
+                    <option value="NDVI Vegetation Map">NDVI Vegetation Map</option>
+                    <option value="Infrastructure Encroachment Heatmap">Infrastructure Encroachment Heatmap</option>
+                  </select>
+                </div>
+
+                {/* Forecast button — shown when custom bbox has no future years predicted yet */}
+                {selectedZoneKey && selectedZoneKey.startsWith("bbox_") && !availableYears.some(yr => yr > 2023) && (
+                  <button
+                    onClick={handleRunCustomForecast}
+                    disabled={loadingForecast || loadingAnalysis}
+                    style={{
+                      width: "100%",
+                      padding: "10px 14px",
+                      background: "linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.2) 100%)",
+                      border: "1px solid rgba(16, 185, 129, 0.35)",
+                      borderRadius: 8,
+                      color: "var(--emerald-400)",
+                      fontFamily: "monospace",
+                      fontWeight: 700,
+                      fontSize: 11,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      transition: "all 0.2s ease",
+                      opacity: (loadingForecast || loadingAnalysis) ? 0.6 : 1,
+                      boxShadow: "0 0 12px rgba(16, 185, 129, 0.05)",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!loadingForecast && !loadingAnalysis) {
+                        e.currentTarget.style.background = "linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.3) 100%)";
+                        e.currentTarget.style.borderColor = "var(--emerald-400)";
+                        e.currentTarget.style.boxShadow = "0 0 16px rgba(16, 185, 129, 0.15)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!loadingForecast && !loadingAnalysis) {
+                        e.currentTarget.style.background = "linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.2) 100%)";
+                        e.currentTarget.style.borderColor = "rgba(16, 185, 129, 0.35)";
+                        e.currentTarget.style.boxShadow = "0 0 12px rgba(16, 185, 129, 0.05)";
+                      }
+                    }}
+                  >
+                    {loadingForecast ? (
+                      <>
+                        <div style={{
+                          width: 12, height: 12, borderRadius: "50%",
+                          border: "1.5px solid var(--border-dim)",
+                          borderTopColor: "var(--emerald-400)",
+                          animation: "spin 0.8s linear infinite"
+                        }} />
+                        Predicting up to 2041...
+                      </>
+                    ) : (
+                      <><span>🔮</span> Predict Future Years (to 2041)</>
+                    )}
+                  </button>
+                )}
+                </>)}
+              </div>
+            )}
+
             {analysisError ? (
               <div style={{
                 display: "flex", flexDirection: "column",
@@ -1525,6 +1868,7 @@ export default function Home() {
               </div>
             ) : null}
           </div>
+          )}
         </section>
       </main>
 
