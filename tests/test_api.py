@@ -210,3 +210,49 @@ class TestCoreModules:
 
         assert "nashik_north" in ZONES_CONFIG
         assert "bbox" in ZONES_CONFIG["nashik_north"]
+
+    def test_forecast_bbox_endpoint(self, client: TestClient, monkeypatch) -> None:
+        # Mock forecast_zone to avoid running U-Net model on CPU during tests
+        called = []
+        def mock_forecast_zone(*args, **kwargs):
+            called.append(args)
+            # Create a mock verdict.json inside cached custom zone directory
+            import json
+            zone_dir = kwargs.get("zone_dir")
+            zone_dir.mkdir(parents=True, exist_ok=True)
+            # Write mock verdict
+            mock_verdict = {
+                "zone": "bbox_-122.1_37.2_-122.0_37.3",
+                "grade": "B",
+                "abi": 0.8,
+                "cropland_loss_ha": 0.0,
+                "timeseries": [
+                    {"year": 2017, "abi": 0.9, "cropland_pixels": 100, "buildings_pixels": 10, "vegetation_pixels": 10, "water_pixels": 10, "soil_pixels": 10, "cropland_pct": 10, "buildings_pct": 10, "vegetation_pct": 10, "water_pct": 10, "soil_pct": 10},
+                    {"year": 2019, "abi": 0.88, "cropland_pixels": 100, "buildings_pixels": 10, "vegetation_pixels": 10, "water_pixels": 10, "soil_pixels": 10, "cropland_pct": 10, "buildings_pct": 10, "vegetation_pct": 10, "water_pct": 10, "soil_pct": 10},
+                    {"year": 2021, "abi": 0.85, "cropland_pixels": 100, "buildings_pixels": 10, "vegetation_pixels": 10, "water_pixels": 10, "soil_pixels": 10, "cropland_pct": 10, "buildings_pct": 10, "vegetation_pct": 10, "water_pct": 10, "soil_pct": 10},
+                    {"year": 2023, "abi": 0.82, "cropland_pixels": 100, "buildings_pixels": 10, "vegetation_pixels": 10, "water_pixels": 10, "soil_pixels": 10, "cropland_pct": 10, "buildings_pct": 10, "vegetation_pct": 10, "water_pct": 10, "soil_pct": 10},
+                    {"year": 2025, "abi": 0.8, "cropland_pixels": 100, "buildings_pixels": 10, "vegetation_pixels": 10, "water_pixels": 10, "soil_pixels": 10, "cropland_pct": 10, "buildings_pct": 10, "vegetation_pct": 10, "water_pct": 10, "soil_pct": 10},
+                    {"year": 2041, "abi": 0.8, "cropland_pixels": 100, "buildings_pixels": 10, "vegetation_pixels": 10, "water_pixels": 10, "soil_pixels": 10, "cropland_pct": 10, "buildings_pct": 10, "vegetation_pct": 10, "water_pct": 10, "soil_pct": 10},
+                ]
+            }
+            # Touch mask_rgb_2041.png
+            (zone_dir / "mask_rgb_2041.png").touch()
+            with open(zone_dir / "verdict.json", "w") as f:
+                json.dump(mock_verdict, f)
+
+        monkeypatch.setattr("model.forecast.forecast_zone", mock_forecast_zone)
+
+        payload = {
+            "min_lon": -122.1,
+            "min_lat": 37.2,
+            "max_lon": -122.0,
+            "max_lat": 37.3,
+            "years": [2017, 2041],
+            "force_refresh": True
+        }
+        response = client.post("/api/forecast_bbox", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["zone_info"]["years"] == [2017, 2019, 2021, 2023, 2025, 2041]
+        assert data["metrics"]["grade"] == "C"
+        assert len(called) == 1

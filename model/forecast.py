@@ -87,7 +87,11 @@ def forecast_zone(
 
     forecast_years = list(range(start_year + 2, target_year + 1, 2))
     if zone_dir is None:
-        zone_dir = PRECOMPUTED_DIR / zone_key
+        if zone_key.startswith("bbox_"):
+            from pipeline.custom_region_pipeline import CUSTOM_REGION_CACHE_DIR
+            zone_dir = CUSTOM_REGION_CACHE_DIR / zone_key
+        else:
+            zone_dir = PRECOMPUTED_DIR / zone_key
 
     # Load historical masks up to start_year
     masks = {}
@@ -103,10 +107,14 @@ def forecast_zone(
     padded_shape = (h + pad_h, w + pad_w)
 
     # Load bbox config and compute road network proximity grid
-    with open(CONFIG_PATH) as f:
-        cfg = yaml.safe_load(f)
-    zone_cfg = cfg.get("zones", {}).get(zone_key, {})
-    bbox = zone_cfg.get("bbox", [0.0, 0.0, 0.0, 0.0])
+    if zone_key.startswith("bbox_"):
+        parts = zone_key.split("_")
+        bbox = [float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])]
+    else:
+        with open(CONFIG_PATH) as f:
+            cfg = yaml.safe_load(f)
+        zone_cfg = cfg.get("zones", {}).get(zone_key, {})
+        bbox = zone_cfg.get("bbox", [0.0, 0.0, 0.0, 0.0])
 
     from pipeline.osm_fetcher import get_road_proximity_grid
     logger.info(f"[{zone_key}] Preparing transport corridor proximity grid for bbox {bbox}...")
