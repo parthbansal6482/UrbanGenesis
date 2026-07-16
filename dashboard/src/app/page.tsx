@@ -882,12 +882,6 @@ export default function Home() {
                 <h1 style={{ fontSize: 17, fontWeight: 800, letterSpacing: "-0.02em", color: "var(--text-primary)", lineHeight: 1 }}>
                   FarmGuard
                 </h1>
-                <span style={{
-                  background: "rgba(5,150,105,0.15)", color: "var(--emerald-400)",
-                  border: "1px solid rgba(5,150,105,0.3)", borderRadius: 4,
-                  padding: "2px 6px", fontSize: 9, fontWeight: 700, fontFamily: "monospace",
-                  letterSpacing: "0.1em", textTransform: "uppercase",
-                }}>SATYUKT</span>
               </div>
               <p style={{
                 marginTop: 2, fontSize: 9, fontFamily: "monospace",

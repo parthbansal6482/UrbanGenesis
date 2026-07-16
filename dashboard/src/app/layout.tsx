@@ -15,9 +15,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FarmGuard — Satyukt Farmland Encroachment Surveillance System",
+  title: "FarmGuard — Farmland Encroachment Surveillance System",
   description:
-    "Advanced satellite-powered farmland encroachment detection and environmental risk monitoring dashboard by Satyukt.",
+    "Advanced satellite-powered farmland encroachment detection and environmental risk monitoring dashboard .",
 };
 
 export default function RootLayout({
