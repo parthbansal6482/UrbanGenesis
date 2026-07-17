@@ -3,6 +3,16 @@
 import React, { useEffect, useRef, useCallback, useState } from "react";
 import type { Map as LMap, Marker } from "leaflet";
 
+interface NominatimResult {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
+  type: string;
+  class: string;
+  boundingbox?: [string, string, string, string]; // [minlat, maxlat, minlon, maxlon]
+}
+
 interface ZoneData {
   key: string;
   name: string;
@@ -50,7 +60,7 @@ export default function LeafletMap({
 }: LeafletMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const LRef = useRef<any>(null); // holds dynamic import of whole leaflet namespace
+  const LRef = useRef<any>(null);
   const mapInstanceRef = useRef<LMap | null>(null);
   const markersRef = useRef<globalThis.Map<string, Marker>>(new globalThis.Map());
   const onSelectRef = useRef(onSelectZone);
@@ -65,6 +75,70 @@ export default function LeafletMap({
   const drawRectangleRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const hoverBboxRef = useRef<any>(null);
+
+  // ---------- Location search state ----------
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<NominatimResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
+
+  // Debounced Nominatim geocode
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setSearchResults([]);
+      setSearchOpen(false);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=6&addressdetails=0`,
+          { headers: { "Accept-Language": "en" } }
+        );
+        const data: NominatimResult[] = await res.json();
+        setSearchResults(data);
+        setSearchOpen(true);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 400);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [searchQuery]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSearchOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleSelectResult = (result: NominatimResult) => {
+    const map = mapInstanceRef.current;
+    const L = LRef.current;
+    if (!map || !L) return;
+    setSearchQuery(result.display_name.split(",")[0]);
+    setSearchOpen(false);
+    setSearchFocused(false);
+    if (result.boundingbox) {
+      const [minLat, maxLat, minLon, maxLon] = result.boundingbox.map(Number);
+      map.fitBounds([[minLat, minLon], [maxLat, maxLon]], { animate: true, duration: 1.2, padding: [40, 40] });
+    } else {
+      map.flyTo([parseFloat(result.lat), parseFloat(result.lon)], 13, { duration: 1.4, easeLinearity: 0.25 });
+    }
+  };
+
 
   useEffect(() => {
     onDrawCompleteRef.current = onDrawComplete;
@@ -196,19 +270,20 @@ export default function LeafletMap({
            style="position:relative;display:flex;align-items:center;justify-content:center;
                   width:${sz}px;height:${sz}px;cursor:pointer;">
         <div style="position:absolute;width:${sz}px;height:${sz}px;border-radius:50%;
-                    border:1.5px solid ${color};animation:fgPulse 2s ease-in-out infinite;
-                    opacity:0.35;"></div>
+                    border:2px solid ${color};animation:fgPulse 2s ease-in-out infinite;
+                    opacity:0.75;"></div>
         <div style="position:absolute;width:${Math.round(sz * 0.65)}px;height:${Math.round(sz * 0.65)}px;
-                    border-radius:50%;border:1.5px solid ${color};
-                    animation:fgPulse 2s ease-in-out infinite 0.45s;opacity:0.6;"></div>
+                    border-radius:50%;border:2px solid ${color};
+                    animation:fgPulse 2s ease-in-out infinite 0.45s;opacity:0.9;"></div>
         <div style="width:${dotSz}px;height:${dotSz}px;border-radius:50%;
                     background:${selected ? bright : color};
-                    border:${selected ? "2px" : "1.5px"} solid ${bright};
-                    box-shadow:0 0 ${selected ? 16 : 9}px ${color};
+                    border:2px solid #ffffff;
+                    box-shadow:0 0 14px 2px ${color}, 0 0 0 1px ${color};
                     position:relative;z-index:2;">
           <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-                      width:3px;height:3px;border-radius:50%;background:#fafaf9;opacity:0.9;"></div>
+                      width:3px;height:3px;border-radius:50%;background:#ffffff;opacity:0.95;"></div>
         </div>
+
         <div class="map-marker-label"
              style="position:absolute;left:${Math.round(sz / 2) + 6}px;top:50%;
                     transform:translateY(-50%) scale(${selected ? 1 : 0.85});
@@ -352,13 +427,17 @@ export default function LeafletMap({
         attributionControl: false,
       });
 
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-        subdomains: "abcd",
+      L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
         maxZoom: 19,
       }).addTo(map);
 
+      L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {
+        maxZoom: 19,
+      }).addTo(map);
+
+
       L.control.attribution({ position: "bottomright", prefix: false })
-        .addAttribution('© <a href="https://carto.com" style="color:var(--emerald-500)">CARTO</a> · <a href="https://openstreetmap.org" style="color:var(--emerald-500)">OSM</a>')
+        .addAttribution('Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community')
         .addTo(map);
 
       L.control.zoom({ position: "topright" }).addTo(map);
@@ -408,29 +487,169 @@ export default function LeafletMap({
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
       <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
 
-      {/* HUD top */}
-      <div style={{
-        position: "absolute", top: 52, left: 12, right: 12,
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        pointerEvents: "none", zIndex: 500,
-      }}>
-        {inputMode === "draw" ? (
-          <div className="glass-card" style={{ padding: "8px 16px", display: "flex", alignItems: "center", gap: 8, background: "rgba(5,150,105,0.2)", borderColor: "var(--emerald-400)" }}>
+      {/* HUD top — only shown during drawing mode */}
+      {inputMode === "draw" && (
+        <div style={{
+          position: "absolute", top: 52, left: 12, right: 12,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          pointerEvents: "none", zIndex: 500,
+        }}>
+          <div className="glass-card" style={{ padding: "8px 16px", display: "flex", alignItems: "center", gap: 8, background: "rgba(5,150,105,0.2)", borderColor: "var(--emerald-400)", pointerEvents: "auto" }}>
             <span className="dot-pulse emerald" />
             <span className="section-label" style={{ color: "var(--emerald-400)", fontWeight: 700 }}>
               Drawing Mode: Click &amp; Drag on Map to Select Bounding Box
             </span>
           </div>
-        ) : (
-          <div className="glass-card" style={{ padding: "5px 12px", display: "flex", alignItems: "center", gap: 6 }}>
-            <span className="dot-pulse emerald" />
-            <span className="section-label" style={{ color: "var(--emerald-400)" }}>Live Satellite View</span>
-          </div>
-        )}
-        <div className="glass-card" style={{ padding: "5px 12px" }}>
-          <span className="section-label">{zones.length} zones monitored · India</span>
         </div>
-      </div>
+      )}
+
+      {/* ── Location Search Bar ── */}
+      {inputMode !== "draw" && (
+        <div
+          ref={searchRef}
+          style={{
+            position: "absolute",
+            top: 12,
+            left: 12,
+            zIndex: 600,
+            width: 280,
+          }}
+        >
+          {/* Input */}
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            background: "var(--bg-glass)",
+            border: searchFocused ? "1px solid var(--emerald-500)" : "1px solid var(--border-bright)",
+            borderRadius: searchOpen && searchResults.length > 0 ? "10px 10px 0 0" : 10,
+            padding: "8px 12px",
+            backdropFilter: "blur(12px)",
+            boxShadow: "0 6px 20px -4px rgba(28, 25, 23, 0.08)",
+            transition: "border-color 0.15s, border-radius 0.15s, box-shadow 0.15s",
+          }}>
+            {searchLoading ? (
+              <div style={{
+                width: 14, height: 14, borderRadius: "50%", flexShrink: 0,
+                border: "1.5px solid var(--border-dim)",
+                borderTopColor: "var(--emerald-400)",
+                animation: "spin 0.8s linear infinite",
+              }} />
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={searchFocused ? "var(--emerald-500)" : "var(--text-muted)"} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transition: "stroke 0.15s" }}>
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+            )}
+            <input
+              type="text"
+              placeholder="Search any place globally..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              onFocus={() => {
+                setSearchFocused(true);
+                if (searchResults.length > 0) setSearchOpen(true);
+              }}
+              onBlur={() => setSearchFocused(false)}
+              onKeyDown={e => {
+                if (e.key === "Escape") { setSearchOpen(false); setSearchQuery(""); }
+                if (e.key === "Enter" && searchResults.length > 0) handleSelectResult(searchResults[0]);
+              }}
+              style={{
+                flex: 1,
+                background: "transparent",
+                border: "none",
+                outline: "none",
+                color: "var(--text-primary)",
+                fontSize: 11,
+                fontFamily: "monospace",
+                letterSpacing: "0.02em",
+              }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => { setSearchQuery(""); setSearchResults([]); setSearchOpen(false); }}
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  color: "var(--text-muted)", padding: 0, display: "flex", flexShrink: 0,
+                  alignItems: "center",
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          {/* Dropdown results */}
+          {searchOpen && (
+            <div style={{
+              background: "rgba(255, 255, 255, 0.95)",
+              border: searchFocused ? "1px solid var(--emerald-500)" : "1px solid var(--border-bright)",
+              borderTop: "none",
+              borderRadius: "0 0 10px 10px",
+              backdropFilter: "blur(12px)",
+              boxShadow: "0 12px 30px rgba(28, 25, 23, 0.1)",
+              overflow: "hidden",
+              transition: "border-color 0.15s",
+            }}>
+              {searchResults.length === 0 && !searchLoading ? (
+                <div style={{
+                  padding: "10px 14px",
+                  fontSize: 10, fontFamily: "monospace",
+                  color: "var(--text-muted)",
+                }}>
+                  No results found
+                </div>
+              ) : (
+                searchResults.map((r, i) => (
+                  <button
+                    key={r.place_id}
+                    onMouseDown={(e) => {
+                      // Prevent input blur before onClick fires
+                      e.preventDefault();
+                    }}
+                    onClick={() => handleSelectResult(r)}
+                    style={{
+                      width: "100%",
+                      background: "transparent",
+                      border: "none",
+                      borderTop: i > 0 ? "1px solid var(--border-dim)" : "none",
+                      padding: "9px 14px",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 3,
+                      transition: "background 0.12s",
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = "var(--emerald-dim)")}
+                    onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <span style={{ fontSize: 10.5, color: "var(--text-primary)", fontFamily: "monospace", lineHeight: 1.4 }}>
+                      {r.display_name.length > 50 ? r.display_name.slice(0, 50) + "…" : r.display_name}
+                    </span>
+                    <span style={{
+                      fontSize: 8.5, fontFamily: "monospace", letterSpacing: "0.05em",
+                      textTransform: "uppercase",
+                      color: "var(--emerald-600)",
+                      background: "var(--emerald-dim)",
+                      border: "1px solid rgba(5, 150, 105, 0.15)",
+                      borderRadius: 3, padding: "1px 5px",
+                      width: "fit-content",
+                    }}>
+                      {r.class} · {r.type}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
 
       {/* Legend - Bottom Left */}
       <div style={{
@@ -472,19 +691,7 @@ export default function LeafletMap({
         </div>
       </div>
 
-      {/* Control Help Tips - Bottom Right */}
-      <div style={{
-        position: "absolute", bottom: 12, right: 12,
-        pointerEvents: "none", zIndex: 500,
-      }}>
-        <div className="glass-card" style={{
-          padding: "5px 12px",
-          fontSize: 8.5, fontFamily: "monospace", letterSpacing: "0.06em",
-          color: "var(--text-muted)", textTransform: "uppercase",
-        }}>
-          {inputMode === "draw" ? "Click & Drag to draw bbox" : "Scroll to zoom · Drag to pan · Click to audit"}
-        </div>
-      </div>
+
     </div>
   );
 }
