@@ -116,13 +116,10 @@ def main() -> None:
         logger.info("\n" + "=" * 60)
         logger.info("Running U-Net future spatial growth forecasting...")
         import torch
-        from model.architecture import UNet
-        from model.forecast import forecast_zone
+        from model.forecast import forecast_zone, load_model_from_checkpoint
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        if device.type == "cpu":
-            torch.set_num_threads(2)
-            torch.set_num_interop_threads(1)
+        # Let PyTorch use default threads for CPU performance
 
         load_path = Path(__file__).resolve().parent / "model" / "checkpoints" / "unet_weights.pt"
         if not load_path.exists():
@@ -130,10 +127,9 @@ def main() -> None:
             logger.error("Please train the U-Net model first by running: python model/train.py")
             sys.exit(1)
 
-        model = UNet(in_channels=22, out_channels=6).to(device)
-        model.load_state_dict(torch.load(load_path, map_location=device))
-        model.eval()
-        logger.info(f"Loaded trained U-Net weights from {load_path}")
+        model = load_model_from_checkpoint(load_path, device)
+        logger.info(f"Successfully loaded trained weights from {load_path}")
+
 
         import os
         cpu_cores = os.cpu_count() or 2
